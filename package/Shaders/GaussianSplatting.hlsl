@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
+#pragma enable_d3d11_debug_symbols
 
 float InvSquareCentered01(float x)
 {

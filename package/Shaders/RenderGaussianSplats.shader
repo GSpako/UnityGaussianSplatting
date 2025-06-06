@@ -12,11 +12,11 @@ Shader "Gaussian Splatting/Render Splats"
             Cull Off
             
 CGPROGRAM
+#pragma enable_d3d11_debug_symbols
 #pragma vertex vert
 #pragma fragment frag
 #pragma require compute
 #pragma use_dxc
-
 #include "GaussianSplatting.hlsl"
 
 StructuredBuffer<uint> _OrderBuffer;

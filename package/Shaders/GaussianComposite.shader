@@ -15,8 +15,8 @@ CGPROGRAM
 #pragma fragment frag
 #pragma require compute
 #pragma use_dxc
+#pragma enable_d3d11_debug_symbols
 #include "UnityCG.cginc"
-
 struct v2f
 {
     float4 vertex : SV_POSITION;

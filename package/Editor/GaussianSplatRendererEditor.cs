@@ -35,6 +35,9 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
+        SerializedProperty m_UseAdaptiveCulling;
+        SerializedProperty m_RMin;
+        SerializedProperty m_AlfaMin;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -75,6 +78,9 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            m_UseAdaptiveCulling = serializedObject.FindProperty("useAdaptiveCulling");
+            m_RMin = serializedObject.FindProperty("RMin");
+            m_AlfaMin = serializedObject.FindProperty("AlfaMin");
 
             s_AllEditors.Add(this);
         }
@@ -111,6 +117,15 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropSHOrder);
             EditorGUILayout.PropertyField(m_PropSHOnly);
             EditorGUILayout.PropertyField(m_PropSortNthFrame);
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Performance Tweaks", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(m_UseAdaptiveCulling, new GUIContent("Use Adaptive Culling"));
+            if(m_UseAdaptiveCulling.boolValue)
+            {
+                EditorGUILayout.PropertyField(m_RMin, new GUIContent("R Min"));
+                EditorGUILayout.PropertyField(m_AlfaMin, new GUIContent("Alfa Min"));
+            }
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);

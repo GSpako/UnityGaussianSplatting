@@ -16,7 +16,7 @@ CGPROGRAM
 #pragma fragment frag
 #pragma require compute
 #pragma use_dxc
-
+#pragma enable_d3d11_debug_symbols
 #include "UnityCG.cginc"
 #include "GaussianSplatting.hlsl"
 

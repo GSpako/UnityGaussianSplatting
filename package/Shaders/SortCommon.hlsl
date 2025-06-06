@@ -24,6 +24,8 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  ******************************************************************************/
+#pragma enable_d3d11_debug_symbols
+
 #define KEYS_PER_THREAD     15U 
 #define D_DIM               256U
 #define PART_SIZE           3840U
@@ -35,7 +37,6 @@
 #define HALF_MASK           127U    // '' 
 #define RADIX_LOG           8U      //log2(RADIX)
 #define RADIX_PASSES        4U      //(Key width) / RADIX_LOG
-
 cbuffer cbGpuSorting : register(b0)
 {
     uint e_numKeys;
@@ -43,6 +44,9 @@ cbuffer cbGpuSorting : register(b0)
     uint e_threadBlocks;
     uint padding;
 };
+
+//StructuredBuffer<uint> _NumKeysBuffer : register(t0); // previously e_numKeys 
+//RWStructuredBuffer<uint> _TilesCountBuffer : register(u0); // previously e_threadBlocks
 
 #if defined(KEY_UINT)
 RWStructuredBuffer<uint> b_sort;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-
+#pragma enable_d3d11_debug_symbols
 #ifndef SPHERICAL_HARMONICS_HLSL
 #define SPHERICAL_HARMONICS_HLSL
 

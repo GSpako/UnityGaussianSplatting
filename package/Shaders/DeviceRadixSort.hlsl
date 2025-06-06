@@ -25,7 +25,7 @@
  *  SOFTWARE.
  ******************************************************************************/
 #include "SortCommon.hlsl"
-
+#pragma enable_d3d11_debug_symbols
 #define US_DIM          128U        //The number of threads in a Upsweep threadblock
 #define SCAN_DIM        128U        //The number of threads in a Scan threadblock
 
