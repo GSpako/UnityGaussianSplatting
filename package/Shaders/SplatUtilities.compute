@@ -26,6 +26,7 @@
 #pragma multi_compile __ SORT_PAIRS
 #pragma multi_compile __ VULKAN
 #pragma kernel InitDeviceRadixSort
+#pragma kernel CalcNumberOfThreads
 #pragma kernel Upsweep
 #pragma kernel Scan
 #pragma kernel Downsweep
@@ -111,7 +112,6 @@ struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
 StructuredBuffer<GaussianCutoutShaderData> _SplatCutouts;
 
 AppendStructuredBuffer<uint> _VisibleSplatSortKeys;
-//AppendStructuredBuffer<uint> _VisibleSplatSortDistances;
 
 RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
@@ -284,20 +284,13 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
             col.a = min(splat.opacity * opacityScale, 65000); 
             view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
             view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
-            //_VisibleSplatSortKeys.Append(idx);  
         }
     }
     
     if (_UseCulling != 0 && view.pos.w > 0)
     {
         //Apend the surviving splats
-        //We have alredy calculated the distance, so might as well use it
-        //_VisibleSplatSortDistances.Append(FloatToSortableUint(camSpace.z));
         _VisibleSplatSortKeys.Append(idx);  
-    }
-    else
-    {
-        _VisibleSplatSortKeys.Append(0xFFFFFFFF);
     }
     
     _SplatViewData[idx] = view;

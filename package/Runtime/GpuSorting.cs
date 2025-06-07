@@ -34,6 +34,7 @@ namespace GaussianSplatting.Runtime
             public uint             count;
             public GraphicsBuffer   inputKeys;
             public GraphicsBuffer   inputValues;
+            public GraphicsBuffer   survivingSplats;
             public SupportResources resources;
             internal int workGroupCount;
         }
@@ -44,6 +45,7 @@ namespace GaussianSplatting.Runtime
             public GraphicsBuffer altPayloadBuffer;
             public GraphicsBuffer passHistBuffer;
             public GraphicsBuffer globalHistBuffer;
+            public GraphicsBuffer indirectBuffer;
 
             public static SupportResources Load(uint count)
             {
@@ -58,6 +60,7 @@ namespace GaussianSplatting.Runtime
                     altPayloadBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAltPayload" },
                     passHistBuffer = new GraphicsBuffer(target, (int)scratchBufferSize, 4) { name = "DeviceRadixPassHistogram" },
                     globalHistBuffer = new GraphicsBuffer(target, (int)reducedScratchBufferSize, 4) { name = "DeviceRadixGlobalHistogram" },
+                    indirectBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 3, sizeof(uint)) { name = "RadixSortThreadsIndirectBuffer" },
                 };
                 return resources;
             }
@@ -78,6 +81,7 @@ namespace GaussianSplatting.Runtime
 
         readonly ComputeShader m_CS;
         readonly int m_kernelInitDeviceRadixSort = -1;
+        readonly int m_kernelCalcNumberOfThreads = -1;
         readonly int m_kernelUpsweep = -1;
         readonly int m_kernelScan = -1;
         readonly int m_kernelDownsweep = -1;
@@ -92,6 +96,7 @@ namespace GaussianSplatting.Runtime
             if (cs)
             {
                 m_kernelInitDeviceRadixSort = cs.FindKernel("InitDeviceRadixSort");
+                m_kernelCalcNumberOfThreads = cs.FindKernel("CalcNumberOfThreads");
                 m_kernelUpsweep = cs.FindKernel("Upsweep");
                 m_kernelScan = cs.FindKernel("Scan");
                 m_kernelDownsweep = cs.FindKernel("Downsweep");
@@ -100,13 +105,15 @@ namespace GaussianSplatting.Runtime
             m_Valid = m_kernelInitDeviceRadixSort >= 0 &&
                       m_kernelUpsweep >= 0 &&
                       m_kernelScan >= 0 &&
-                      m_kernelDownsweep >= 0;
+                      m_kernelDownsweep >= 0 &&
+                      m_kernelCalcNumberOfThreads >= 0;
             if (m_Valid)
             {
                 if (!cs.IsSupported(m_kernelInitDeviceRadixSort) ||
                     !cs.IsSupported(m_kernelUpsweep) ||
                     !cs.IsSupported(m_kernelScan) ||
-                    !cs.IsSupported(m_kernelDownsweep))
+                    !cs.IsSupported(m_kernelDownsweep) ||
+                    !cs.IsSupported(m_kernelCalcNumberOfThreads)) 
                 {
                     m_Valid = false;
                 }
@@ -133,10 +140,7 @@ namespace GaussianSplatting.Runtime
         //Can we remove the last 4 padding without breaking?
         struct SortConstants
         {
-            public uint numKeys;                        // The number of keys to sort
             public uint radixShift;                     // The radix shift value for the current pass
-            public uint threadBlocks;                   // threadBlocks
-            public uint padding0;                       // Padding - unused
         }
 
         public void Dispatch(CommandBuffer cmd, Args args)
@@ -149,24 +153,28 @@ namespace GaussianSplatting.Runtime
             GraphicsBuffer dstPayloadBuffer = args.resources.altPayloadBuffer;
 
             SortConstants constants = default;
-            constants.numKeys = args.count;
-            constants.threadBlocks = DivRoundUp(args.count, DEVICE_RADIX_SORT_PARTITION_SIZE);
 
-            // Setup overall constants
-            cmd.SetComputeIntParam(m_CS, "e_numKeys", (int)constants.numKeys);
-            cmd.SetComputeIntParam(m_CS, "e_threadBlocks", (int)constants.threadBlocks);
+            cmd.SetComputeBufferParam(m_CS, m_kernelCalcNumberOfThreads, "_NumKeysBuffer", args.survivingSplats);
+            cmd.SetComputeBufferParam(m_CS, m_kernelCalcNumberOfThreads, "_TilesCountBuffer", args.resources.indirectBuffer);
+            cmd.DispatchCompute(m_CS, m_kernelCalcNumberOfThreads, 1, 1, 1);
 
             //Set statically located buffers
             //Upsweep
+            cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "_NumKeysBuffer", args.survivingSplats);
             cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_passHist", args.resources.passHistBuffer);
             cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_globalHist", args.resources.globalHistBuffer);
+            cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "_TilesCountBuffer", args.resources.indirectBuffer);
 
             //Scan
+            cmd.SetComputeBufferParam(m_CS, m_kernelScan, "_NumKeysBuffer", args.survivingSplats);
             cmd.SetComputeBufferParam(m_CS, m_kernelScan, "b_passHist", args.resources.passHistBuffer);
+            cmd.SetComputeBufferParam(m_CS, m_kernelScan, "_TilesCountBuffer", args.resources.indirectBuffer);
 
             //Downsweep
+            cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "_NumKeysBuffer", args.survivingSplats);
             cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_passHist", args.resources.passHistBuffer);
             cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_globalHist", args.resources.globalHistBuffer);
+            cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "_TilesCountBuffer", args.resources.indirectBuffer);
 
             //Clear the global histogram
             cmd.SetComputeBufferParam(m_CS, m_kernelInitDeviceRadixSort, "b_globalHist", args.resources.globalHistBuffer);
@@ -179,7 +187,7 @@ namespace GaussianSplatting.Runtime
 
                 //Upsweep
                 cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_sort", srcKeyBuffer);
-                cmd.DispatchCompute(m_CS, m_kernelUpsweep, (int)constants.threadBlocks, 1, 1);
+                cmd.DispatchCompute(m_CS, m_kernelUpsweep, args.resources.indirectBuffer, 0);
 
                 // Scan
                 cmd.DispatchCompute(m_CS, m_kernelScan, (int)DEVICE_RADIX_SORT_RADIX, 1, 1);
@@ -189,7 +197,7 @@ namespace GaussianSplatting.Runtime
                 cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_sortPayload", srcPayloadBuffer);
                 cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_alt", dstKeyBuffer);
                 cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_altPayload", dstPayloadBuffer);
-                cmd.DispatchCompute(m_CS, m_kernelDownsweep, (int)constants.threadBlocks, 1, 1);
+                cmd.DispatchCompute(m_CS, m_kernelDownsweep, args.resources.indirectBuffer, 0);
 
                 // Swap
                 (srcKeyBuffer, dstKeyBuffer) = (dstKeyBuffer, srcKeyBuffer);

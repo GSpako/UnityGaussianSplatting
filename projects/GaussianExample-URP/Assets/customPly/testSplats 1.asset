@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33b71fae31e6c7d438e8566dc713e666, type: 3}
+  m_Name: testSplats 1
+  m_EditorClassIdentifier: 
+  m_FormatVersion: 20231020
+  m_SplatCount: 5
+  m_BoundsMin: {x: 0, y: 0, z: 0}
+  m_BoundsMax: {x: 40, y: 0, z: 0}
+  m_DataHash:
+    serializedVersion: 2
+    Hash: fa20e51624c29b7d90e956f6ec60842e
+  m_PosFormat: 0
+  m_ScaleFormat: 0
+  m_SHFormat: 0
+  m_ColorFormat: 0
+  m_PosData: {fileID: 4900000, guid: 5a67a1f78fe2c5b4685891cb5834c528, type: 3}
+  m_ColorData: {fileID: 4900000, guid: 614d78372f8809c48b9b2dba853c074c, type: 3}
+  m_OtherData: {fileID: 4900000, guid: 196ac24af85a07c40ab4910b850a022f, type: 3}
+  m_SHData: {fileID: 4900000, guid: 60eed34440179d448b02d4f9e740ae1a, type: 3}
+  m_ChunkData: {fileID: 0}
+  m_Cameras: []

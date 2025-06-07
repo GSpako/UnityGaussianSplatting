@@ -659,7 +659,7 @@ PlayerSettings:
   webGLCloseOnQuit: 0
   webWasm2023: 0
   scriptingDefineSymbols:
-    Standalone: D3D_DEBUG_INFO;UNITY_ENABLE_D3D_DEBUG_LAYER;UNITY_ENABLE_D3D12
+    Standalone: D3D_DEBUG_INFO;UNITY_ENABLE_D3D12;UNITY_ENABLE_D3D_DEBUG_LAYER;D3DCOMPILE_DEBUG;D3DCOMPILE_SKIP_OPTIMIZATION
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}

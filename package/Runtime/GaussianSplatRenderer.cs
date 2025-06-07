@@ -165,6 +165,7 @@ namespace GaussianSplatting.Runtime
             cmb.EndSample(s_ProfCalcView);
 
             cmb.CopyCounterValue(gs.m_GpuVisibleIndices, gs.m_DrawArgs, sizeof(uint));
+            cmb.CopyCounterValue(gs.m_GpuVisibleIndices, gs.m_GpuSplatsToSort, 0);
 
             var matrix = gs.transform.localToWorldMatrix;
             if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
@@ -332,6 +333,7 @@ namespace GaussianSplatting.Runtime
 
         internal GraphicsBuffer m_GpuVisibleDistances;
         internal GraphicsBuffer m_GpuVisibleIndices;
+        internal GraphicsBuffer m_GpuSplatsToSort;
         internal GraphicsBuffer m_DrawArgs;
 
         GraphicsBuffer m_GpuPosData;
@@ -482,6 +484,7 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured,
                     (int) (asset.chunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()),
                     UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) {name = "GaussianChunkData"};
+                
                 m_GpuChunks.SetData(asset.chunkData.GetData<GaussianSplatAsset.ChunkInfo>());
                 m_GpuChunksValid = true;
             }
@@ -493,7 +496,7 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
-            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
+            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize) { name = "Gpu_View" };
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2) { name = "IndexBuffer"};
             // cube indices, most often we use only the first quad
             m_GpuIndexBuffer.SetData(new ushort[]
@@ -517,6 +520,8 @@ namespace GaussianSplatting.Runtime
             m_GpuVisibleIndices = new GraphicsBuffer(GraphicsBuffer.Target.Append | GraphicsBuffer.Target.Structured, m_SplatCount, sizeof(uint))
             { name = "GaussianVisibleIndices" };
 
+            m_GpuSplatsToSort = new GraphicsBuffer(GraphicsBuffer.Target.CopyDestination | GraphicsBuffer.Target.Structured, 1, sizeof(int)) { name = "SurviveCountToSort" };
+            m_GpuSplatsToSort.SetData(new uint[] {(uint)splatCount });
             InitSortBuffers(splatCount);
         }
 
@@ -660,6 +665,7 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuEditCountsBounds);
             DisposeBuffer(ref m_GpuEditCutouts);
             DisposeBuffer(ref m_GpuVisibleIndices);
+            DisposeBuffer(ref m_GpuSplatsToSort);
             DisposeBuffer(ref m_GpuVisibleDistances);
             DisposeBuffer(ref m_DrawArgs);
 
@@ -741,8 +747,7 @@ namespace GaussianSplatting.Runtime
             worldToCamMatrix.m21 *= -1;
             worldToCamMatrix.m22 *= -1;
 
-            m_SorterArgs.inputKeys = m_GpuSortDistances;
-            m_SorterArgs.inputValues = m_GpuSortKeys;
+            
 
             // calculate distance to the camera for each splat
             cmd.BeginSample(s_ProfSort);
@@ -759,6 +764,9 @@ namespace GaussianSplatting.Runtime
 
             // sort the splats
             EnsureSorterAndRegister();
+            m_SorterArgs.inputKeys = m_GpuSortDistances;
+            m_SorterArgs.inputValues = m_GpuSortKeys;
+            m_SorterArgs.survivingSplats = m_GpuSplatsToSort;
             m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
         }
@@ -790,6 +798,7 @@ namespace GaussianSplatting.Runtime
             EnsureSorterAndRegister();
             m_SorterArgs.inputKeys = m_GpuVisibleDistances;
             m_SorterArgs.inputValues = m_GpuVisibleIndices;
+            m_SorterArgs.survivingSplats = m_GpuSplatsToSort;
             m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
         }
