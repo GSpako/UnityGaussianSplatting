@@ -161,7 +161,7 @@ namespace GaussianSplatting.Runtime
             gs.m_GpuVisibleDistances.SetCounterValue(0);
 
             cmb.BeginSample(s_ProfCalcView);
-            gs.CalcViewData(cmb, cam);
+            gs.CalcViewDataCulled(cmb, cam);
             cmb.EndSample(s_ProfCalcView);
 
             cmb.CopyCounterValue(gs.m_GpuVisibleIndices, gs.m_DrawArgs, sizeof(uint));
@@ -434,6 +434,7 @@ namespace GaussianSplatting.Runtime
             SetIndices,
             CalcDistances,
             CalcViewData,
+            CalcViewDataCulled,
             InitVisibleBuffers,
             UpdateEditData,
             InitEditData,
@@ -692,7 +693,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatDebugPoints);
             DestroyImmediate(m_MatDebugBoxes);
         }
-
+        
         internal void CalcViewData(CommandBuffer cmb, Camera cam)
         {
             if (cam.cameraType == CameraType.Preview)
@@ -708,14 +709,8 @@ namespace GaussianSplatting.Runtime
             Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
             Vector4 camPos = cam.transform.position;
 
-            m_GpuVisibleDistances.SetCounterValue(0);
-            m_GpuVisibleIndices.SetCounterValue(0);
-
             // calculate view dependent data for each splat
             SetAssetDataOnCS(cmb, KernelIndices.CalcViewData);
-
-            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, Props.VisibleSplatSortKeys, m_GpuVisibleIndices);
-            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, Props.VisibleSplatSortDistances, m_GpuVisibleDistances);
 
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, matO2W);
@@ -735,6 +730,50 @@ namespace GaussianSplatting.Runtime
 
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        }
+
+        internal void CalcViewDataCulled(CommandBuffer cmb, Camera cam)
+        {
+            if (cam.cameraType == CameraType.Preview)
+                return;
+
+            var tr = transform;
+
+            Matrix4x4 matView = cam.worldToCameraMatrix;
+            Matrix4x4 matO2W = tr.localToWorldMatrix;
+            Matrix4x4 matW2O = tr.worldToLocalMatrix;
+            int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
+            int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
+            Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
+            Vector4 camPos = cam.transform.position;
+
+            m_GpuVisibleDistances.SetCounterValue(0);
+            m_GpuVisibleIndices.SetCounterValue(0);
+
+            // calculate view dependent data for each splat
+            SetAssetDataOnCS(cmb, KernelIndices.CalcViewDataCulled);
+
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, Props.VisibleSplatSortKeys, m_GpuVisibleIndices);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, Props.VisibleSplatSortDistances, m_GpuVisibleDistances);
+
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, matO2W);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, matW2O);
+
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecScreenParams, screenPar);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatScale, m_SplatScale);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatOpacityScale, m_OpacityScale);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
+
+            // umbral de culling
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.MinRadius, RMin);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.AlfaMin, AlfaMin);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.UseCulling, useAdaptiveCulling ? 1 : 0);
+
+            m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewDataCulled, out uint gsX, out _, out _);
+            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, (m_GpuView.count + (int)gsX - 1) / (int)gsX, 1, 1);
         }
 
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
