@@ -7,11 +7,13 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel;
+using UnityEditor.VersionControl;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.XR;
 using static GaussianSplatting.Runtime.GaussianSplatRenderer;
+using static UnityEditor.UIElements.CurveField;
 
 namespace GaussianSplatting.Runtime
 {
@@ -143,8 +145,6 @@ namespace GaussianSplatting.Runtime
             if (displayMat == null)
                 return;
 
-            //gs.FillBuffersCulling(cmb);
-
             gs.SetAssetDataOnMaterial(mpb);
             mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
             mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
@@ -157,8 +157,11 @@ namespace GaussianSplatting.Runtime
             mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
-            gs.m_GpuVisibleIndices.SetCounterValue(0);
-            gs.m_GpuVisibleDistances.SetCounterValue(0);
+            //if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
+            //{
+                gs.m_GpuVisibleIndices.SetCounterValue(0);
+                gs.m_GpuVisibleDistances.SetCounterValue(0);
+            //}
 
             cmb.BeginSample(s_ProfCalcView);
             gs.CalcViewDataCulled(cmb, cam);
@@ -168,15 +171,25 @@ namespace GaussianSplatting.Runtime
             cmb.CopyCounterValue(gs.m_GpuVisibleIndices, gs.m_GpuSplatsToSort, 0);
 
             var matrix = gs.transform.localToWorldMatrix;
-            if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
+            //if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
                 gs.SortCulledSplats(cmb, cam, matrix);
-            gs.m_FrameCounter++;
+            //gs.m_FrameCounter++;
 
             mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuVisibleIndices);
 
+            MeshTopology topology = MeshTopology.Triangles;
+            if( gs.m_RenderMode != gs.m_LastRenderMode )
+            {
+                if (GaussianSplatRenderer.RenderMode.DebugChunkBounds == gs.m_RenderMode || GaussianSplatRenderer.RenderMode.DebugBoxes == gs.m_RenderMode)
+                { gs.m_DrawArgs.SetData(new uint[] { 36 }, 0, 0, 1); }
+                else
+                { gs.m_DrawArgs.SetData(new uint[] { 6 }, 0, 0, 1); }
+            }
+
             cmb.BeginSample(s_ProfDraw);
-            cmb.DrawProceduralIndirect(gs.m_GpuIndexBuffer, matrix, displayMat, 0, MeshTopology.Triangles, gs.m_DrawArgs, 0, mpb );
+            cmb.DrawProceduralIndirect(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, gs.m_DrawArgs, 0, mpb );
             cmb.EndSample(s_ProfDraw);
+            gs.m_LastRenderMode = gs.m_RenderMode;
         }
 
 
@@ -305,7 +318,7 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
-        [Header("Performance Tweaks")]
+        //[Header("Performance Tweaks")]
         public bool useAdaptiveCulling = true;
         [Range(0, 1)]
         [Tooltip("The threshold for the radious culling")]
@@ -314,7 +327,12 @@ namespace GaussianSplatting.Runtime
         [Tooltip("The threshold for the alpha culling")]
         public float AlfaMin = 1;
 
+        public bool useTileSystem = false;
+        [Tooltip("Grid used in the tile system")]
+        public Vector2 gridSize = Vector2.one;
+
         public RenderMode m_RenderMode = RenderMode.Splats;
+        internal RenderMode m_LastRenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
 
         public GaussianCutout[] m_Cutouts;

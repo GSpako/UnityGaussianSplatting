@@ -24,6 +24,8 @@ struct v2f
     float4 vertex : SV_POSITION;
 };
 
+StructuredBuffer<uint> _OrderBuffer;
+
 float _SplatSize;
 bool _DisplayIndex;
 int _SplatCount;
@@ -31,7 +33,7 @@ int _SplatCount;
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
-    uint splatIndex = instID;
+    uint splatIndex = _OrderBuffer[instID];
 
     SplatData splat = LoadSplatData(splatIndex);
 

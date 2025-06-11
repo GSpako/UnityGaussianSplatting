@@ -110,8 +110,6 @@ struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
 };
 
 StructuredBuffer<GaussianCutoutShaderData> _SplatCutouts;
-
-
 RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
@@ -300,19 +298,18 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         centerClipPos.w = 0;
     }
     
-    if (_UseCulling != 0)
+    if (_UseCulling == 1)
     {
         // alfa threshold culling
-        float splatAlpha = splat.opacity * opacityScale;
-        if (splatAlpha <= _AlfaMin)
+        if (splat.opacity * opacityScale <= _AlfaMin)
         {
             centerClipPos.w = 0;
         }
     }
     
     view.pos = centerClipPos;
-    bool behindCam = centerClipPos.w <= 0;
-    if (!behindCam)
+    bool culled = centerClipPos.w <= 0;
+    if (!culled)
     {
         float4 boxRot = splat.rot;
         float3 boxSize = splat.scale;
@@ -328,19 +325,16 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
     
-        if (_UseCulling != 0)
-        {
-            float r_p = max(length(view.axis1), length(view.axis2)) / abs(camSpace.z);
+        float r_p = max( length(view.axis1), length(view.axis2) ) / abs( camSpace.z );
 
-            if (r_p <= _RMin)
-            {
-                view.pos.w = 0; // mark as culled
-                behindCam = true; // reuse behind Cam to avoid using a return;
-            }
-        }
-    
-        if (!behindCam)
+        if (r_p <= _RMin)
         {
+            culled = true; // reuse behind Cam to avoid using a return;
+            
+        } 
+        else 
+        {
+            
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
             float3 objViewDir = mul((float3x3) _MatrixWorldToObject, worldViewDir);
             objViewDir = normalize(objViewDir);
@@ -353,9 +347,8 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         }
     }
     
-    if (_UseCulling != 0 && view.pos.w > 0)
+    if (!culled)
     {
-        //Apend the surviving splats
         _VisibleSplatSortKeys.Append(idx);
     }
     

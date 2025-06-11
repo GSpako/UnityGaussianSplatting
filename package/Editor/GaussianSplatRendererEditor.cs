@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using GaussianSplatting.Runtime;
 using Unity.Collections.LowLevel.Unsafe;
@@ -116,12 +117,13 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropOpacityScale);
             EditorGUILayout.PropertyField(m_PropSHOrder);
             EditorGUILayout.PropertyField(m_PropSHOnly);
-            EditorGUILayout.PropertyField(m_PropSortNthFrame);
+            if (!m_UseAdaptiveCulling.boolValue)
+                EditorGUILayout.PropertyField(m_PropSortNthFrame);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Performance Tweaks", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(m_UseAdaptiveCulling, new GUIContent("Use Adaptive Culling"));
-            if(m_UseAdaptiveCulling.boolValue)
+            if (m_UseAdaptiveCulling.boolValue)
             {
                 EditorGUILayout.PropertyField(m_RMin, new GUIContent("R Min"));
                 EditorGUILayout.PropertyField(m_AlfaMin, new GUIContent("Alfa Min"));
@@ -129,11 +131,48 @@ namespace GaussianSplatting.Editor
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(m_PropRenderMode);
-            if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
-                EditorGUILayout.PropertyField(m_PropPointDisplaySize);
 
-            EditorGUILayout.Space();
+            bool multiple = serializedObject.isEditingMultipleObjects;
+            bool useCulling = m_UseAdaptiveCulling != null && m_UseAdaptiveCulling.boolValue;
+
+            if (!multiple && useCulling)
+            {
+                var enumType = typeof(GaussianSplatRenderer.RenderMode);
+                var allValues = Enum.GetValues(enumType).Cast<GaussianSplatRenderer.RenderMode>();
+                var filtered = allValues
+                    .Where(v => v != GaussianSplatRenderer.RenderMode.DebugChunkBounds)
+                    .ToArray();
+                var displayNames = filtered
+                    .Select(v => ObjectNames.NicifyVariableName(v.ToString()))
+                    .ToArray();
+                var currentEnum = (GaussianSplatRenderer.RenderMode)m_PropRenderMode.intValue;
+                int currentIndexInFiltered = Array.IndexOf(filtered, currentEnum);
+                if (currentIndexInFiltered < 0)
+                {
+                    currentIndexInFiltered = 0;
+                }
+                int newIndex = EditorGUILayout.Popup("Render Mode", currentIndexInFiltered, displayNames);
+                var newEnumValue = filtered[newIndex];
+                if ((int)newEnumValue != m_PropRenderMode.intValue)
+                {
+                    m_PropRenderMode.intValue = (int)newEnumValue;
+                }
+                if (newEnumValue == GaussianSplatRenderer.RenderMode.DebugPoints
+                    || newEnumValue == GaussianSplatRenderer.RenderMode.DebugPointIndices)
+                {
+                    EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+                }
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(m_PropRenderMode);
+                if (m_PropRenderMode.intValue == (int)GaussianSplatRenderer.RenderMode.DebugPoints
+                    || m_PropRenderMode.intValue == (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
+                {
+                    EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+                }
+            }
+
             m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
             if (m_ResourcesExpanded)
             {
@@ -162,6 +201,7 @@ namespace GaussianSplatting.Editor
 
             serializedObject.ApplyModifiedProperties();
         }
+
 
         void EditCameras(GaussianSplatRenderer gs)
         {
