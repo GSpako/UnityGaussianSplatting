@@ -36,6 +36,8 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
+        SerializedProperty m_UseTileSystem;
+        SerializedProperty m_GridSize;
         SerializedProperty m_UseAdaptiveCulling;
         SerializedProperty m_RMin;
         SerializedProperty m_AlfaMin;
@@ -79,6 +81,8 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            m_UseTileSystem = serializedObject.FindProperty("useTileSystem");
+            m_GridSize = serializedObject.FindProperty("gridSize");
             m_UseAdaptiveCulling = serializedObject.FindProperty("useAdaptiveCulling");
             m_RMin = serializedObject.FindProperty("RMin");
             m_AlfaMin = serializedObject.FindProperty("AlfaMin");
@@ -122,6 +126,13 @@ namespace GaussianSplatting.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Performance Tweaks", EditorStyles.boldLabel);
+
+            // Tile System
+            EditorGUILayout.PropertyField(m_UseTileSystem, new GUIContent("Use the tile System"));
+            if (m_UseTileSystem.boolValue)
+                EditorGUILayout.PropertyField(m_GridSize, new GUIContent("Grid size"));
+
+            // Culling
             EditorGUILayout.PropertyField(m_UseAdaptiveCulling, new GUIContent("Use Adaptive Culling"));
             if (m_UseAdaptiveCulling.boolValue)
             {

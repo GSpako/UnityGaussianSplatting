@@ -2,10 +2,14 @@
 #define GROUP_SIZE 1024
 #pragma enable_d3d11_debug_symbols
 
+#pragma kernel CSResetCounter
+#pragma kernel CSCopyCounterToDrawArgs
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 #pragma kernel CSCalcViewData  
 #pragma kernel CSCalcViewDataCulled  
+#pragma kernel CSCalcViewDataTiled 
+#pragma kernel CSCollectTileSplats  
 #pragma kernel CSUpdateEditData
 #pragma kernel CSInitEditData
 #pragma kernel CSClearBuffer
@@ -59,6 +63,32 @@ uint FloatToSortableUint(float f)
     return fu ^ mask;
 }
 
+// Reset counter buffer (RWStructuredBuffer<uint>) to zero
+RWStructuredBuffer<uint> _SplatCounter;
+
+[numthreads(1, 1, 1)]
+void CSResetCounter(uint3 id : SV_DispatchThreadID)
+{
+    _SplatCounter[0] = 0;
+}
+
+// Copy counter value into draw args buffer
+StructuredBuffer<uint> _SplatCounterRO; // same buffer as _SplatCounter, just read-only
+RWStructuredBuffer<uint> _DrawArgs;
+uint _Quad;
+
+[numthreads(1, 1, 1)]
+void CSCopyCounterToDrawArgs(uint3 id : SV_DispatchThreadID)
+{
+    uint indexCount = (_Quad == 1) ? 6 : 36;
+
+    _DrawArgs[0] = indexCount; // index count per instance
+    _DrawArgs[1] = _SplatCounterRO[0]; // instance count from counter
+    _DrawArgs[2] = 0;
+    _DrawArgs[3] = 0;
+    _DrawArgs[4] = 0;
+}
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSSetIndices (uint3 id : SV_DispatchThreadID)
 {
@@ -77,11 +107,6 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
         return;
 
     uint origIdx = _SplatSortKeys[idx];
-    if (idx == 0xFFFFFFFF)
-    {
-        _SplatSortDistances[idx] = FloatToSortableUint(asfloat(0x7F800000));
-        return;
-    }
     
     float3 pos = LoadSplatPos(origIdx);
     pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
@@ -261,7 +286,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     _SplatViewData[idx] = view;
 }
 
-AppendStructuredBuffer<uint> _VisibleSplatSortKeys;
+RWStructuredBuffer<uint> _VisibleSplatSortKeys;
 
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
@@ -275,6 +300,100 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos, 1)).xyz;
     float3 camSpace = mul(_MatrixMV, float4(splat.pos, 1)).xyz;
+    
+    float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
+    half opacityScale = _SplatOpacityScale;
+    float splatScale = _SplatScale;
+
+    // deleted?
+    if (_SplatBitsValid)
+    {
+        uint wordIdx = idx / 32;
+        uint bitIdx = idx & 31;
+        uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
+        if (wordVal & (1 << bitIdx))
+        {
+            centerClipPos.w = 0;
+        }
+    }
+
+    // cutouts
+    if (IsSplatCut(splat.pos))
+    {
+        centerClipPos.w = 0;
+    }
+    
+    if (_UseCulling == 1)
+    {
+        // alfa threshold culling
+        if (splat.opacity * opacityScale < _AlfaMin)
+        {
+            centerClipPos.w = 0;
+        }
+    }
+    
+    view.pos = centerClipPos;
+    bool culled = centerClipPos.w <= 0;
+    if (!culled)
+    {
+        float4 boxRot = splat.rot;
+        float3 boxSize = splat.scale;
+
+        float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
+
+        float3 cov3d0, cov3d1;
+        CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
+        float splatScale2 = splatScale * splatScale;
+        cov3d0 *= splatScale2;
+        cov3d1 *= splatScale2;
+        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
+        
+        DecomposeCovariance(cov2d, view.axis1, view.axis2);
+    
+        float r_p = max( length(view.axis1), length(view.axis2) ) / abs( camSpace.z );
+
+        if (r_p <= _RMin)
+        {
+            culled = true; // reuse behind Cam to avoid using a return;
+        } 
+        else 
+        {
+            
+            float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
+            float3 objViewDir = mul((float3x3) _MatrixWorldToObject, worldViewDir);
+            objViewDir = normalize(objViewDir);
+
+            half4 col;
+            col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0);
+            col.a = min(splat.opacity * opacityScale, 65000);
+            view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
+            view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
+        }
+    }
+    
+    if (!culled)
+    {
+        uint writeIdx;
+        InterlockedAdd(_SplatCounter[0], 1, writeIdx);
+        
+        _VisibleSplatSortKeys[writeIdx] = idx;
+    }
+    
+    _SplatViewData[idx] = view;
+}
+
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    SplatData splat = LoadSplatData(idx);
+    SplatViewData view = (SplatViewData) 0;
+    
+    float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos, 1)).xyz;
     
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
@@ -324,15 +443,17 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
         
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
-    
-        float r_p = max( length(view.axis1), length(view.axis2) ) / abs( camSpace.z );
-
+        
+        float depth = mul(_MatrixMV, float4(splat.pos, 1)).z;
+        float r_p = max(length(view.axis1), length(view.axis2)) / abs(depth);
+        view.pos.z = depth;
+        
         if (r_p <= _RMin)
         {
             culled = true; // reuse behind Cam to avoid using a return;
-            
-        } 
-        else 
+            centerClipPos.w = 0;
+        }
+        else
         {
             
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
@@ -347,13 +468,66 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         }
     }
     
-    if (!culled)
-    {
-        _VisibleSplatSortKeys.Append(idx);
-    }
-    
     _SplatViewData[idx] = view;
 }
+
+StructuredBuffer<SplatViewData> _SplatViewDataReadOnly; //done
+RWStructuredBuffer<uint> _TileScratchKeys;
+RWStructuredBuffer<uint> _TileScratchDepths;
+RWStructuredBuffer<uint> _TileScratchCounter;
+
+uint _TileIndex; //done
+uint _TileCountX, _TileCountY; //done
+//float4 _VecScreenParams; //done
+//uint _SplatCount;// done
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    SplatViewData view = _SplatViewData[idx];
+     
+    // cull if behind camera or invisible
+    if (view.pos.w <= 0)
+        return;
+
+    // screen center (in pixels)
+    float2 centerNDC = view.pos.xy / view.pos.w;
+    float2 screenCenter = (centerNDC * 0.5 + 0.5) * float2(_VecScreenParams.xy); // maybe i could do this in calcViewData, but for now lets leave it here
+
+    // extent vectors
+    float2 r1 = view.axis1;
+    float2 r2 = view.axis2;
+
+    // ellipse bounding box (in pixels)
+    float2 bbMin = screenCenter + min(min(r1, r2), -max(r1, r2));
+    float2 bbMax = screenCenter + max(max(r1, r2), -min(r1, r2));
+
+    // tile bounds
+    uint2 tileXY = uint2(_TileIndex % _TileCountX, _TileIndex / _TileCountX);
+    float2 tileSize = float2(_VecScreenParams.xy) / float2(_TileCountX, _TileCountY);
+    float2 tileMin = tileXY * tileSize;
+    float2 tileMax = tileMin + tileSize;
+
+    // bounding box overlap test
+    if (bbMax.x < tileMin.x || bbMin.x > tileMax.x ||
+        bbMax.y < tileMin.y || bbMin.y > tileMax.y)
+        return;
+
+    // splat intersects this tile
+    uint writeIdx;
+    InterlockedAdd(_TileScratchCounter[0], 1, writeIdx);
+    _TileScratchKeys[writeIdx] = idx;
+
+    // Use sortable depth
+    float depth = view.pos.z; // already in view space z
+    uint tileEncodedDepth = FloatToSortableUint(depth);
+    _TileScratchDepths[writeIdx] = tileEncodedDepth;
+}
+
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;
