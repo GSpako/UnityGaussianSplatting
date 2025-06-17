@@ -446,7 +446,6 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
         
         float depth = mul(_MatrixMV, float4(splat.pos, 1)).z;
         float r_p = max(length(view.axis1), length(view.axis2)) / abs(depth);
-        view.pos.z = depth;
         
         if (r_p <= _RMin)
         {
@@ -472,9 +471,8 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
 }
 
 StructuredBuffer<SplatViewData> _SplatViewDataReadOnly; //done
-RWStructuredBuffer<uint> _TileScratchKeys;
-RWStructuredBuffer<uint> _TileScratchDepths;
-RWStructuredBuffer<uint> _TileScratchCounter;
+RWStructuredBuffer<uint> _SplatsKeys;
+RWStructuredBuffer<uint> _SplatsDistances;
 
 uint _TileIndex; //done
 uint _TileCountX, _TileCountY; //done
@@ -488,7 +486,7 @@ void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
     if (idx >= _SplatCount)
         return;
 
-    SplatViewData view = _SplatViewData[idx];
+    SplatViewData view = _SplatViewDataReadOnly[idx];
      
     // cull if behind camera or invisible
     if (view.pos.w <= 0)
@@ -519,13 +517,9 @@ void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
 
     // splat intersects this tile
     uint writeIdx;
-    InterlockedAdd(_TileScratchCounter[0], 1, writeIdx);
-    _TileScratchKeys[writeIdx] = idx;
-
-    // Use sortable depth
-    float depth = view.pos.z; // already in view space z
-    uint tileEncodedDepth = FloatToSortableUint(depth);
-    _TileScratchDepths[writeIdx] = tileEncodedDepth;
+    InterlockedAdd(_SplatCounter[0], 1, writeIdx);
+    _SplatsKeys[writeIdx] = idx;
+    _SplatsDistances[writeIdx] = FloatToSortableUint(view.pos.z);   
 }
 
 
