@@ -10,6 +10,7 @@ using Unity.Profiling.LowLevel;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.XR;
 using static GaussianSplatting.Runtime.GaussianSplatRenderer;
 
@@ -107,7 +108,7 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, RenderTargetIdentifier gaussianRTid)
         {
             
             Material matComposite = null;
@@ -123,7 +124,7 @@ namespace GaussianSplatting.Runtime
                         gs.currentLine = GaussianSplatRenderer.RenderLine.CulledTiled;
                     else 
                         gs.currentLine = GaussianSplatRenderer.RenderLine.Tiled;
-                    SortAndRenderSplatsTiles(gs, mpb, cam, cmb, ref matComposite);
+                    SortAndRenderSplatsTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
                 }
                 else if (gs.useAdaptiveCulling)
                 {
@@ -140,7 +141,7 @@ namespace GaussianSplatting.Runtime
             
         }
 
-        public void SortAndRenderSplatsTiles(GaussianSplatRenderer gs, MaterialPropertyBlock mpb, Camera cam, CommandBuffer cmb, ref Material matComposite)
+        public void SortAndRenderSplatsTiles(GaussianSplatRenderer gs, MaterialPropertyBlock mpb, Camera cam, CommandBuffer cmb, RenderTargetIdentifier gaussianRTid, ref Material matComposite)
         {
             gs.EnsureMaterials();
             matComposite = gs.m_MatComposite;
@@ -180,14 +181,15 @@ namespace GaussianSplatting.Runtime
                 gs.ResetCounter(cmb);
                 gs.CollectTileSplats(cmb, i);
                 gs.CopyCounterToDrawArgs(cmb);
-
+                 
                 var matrix = gs.transform.localToWorldMatrix;
                 gs.SortPoints(cmb, cam, matrix);
 
                 mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
 
                 cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProceduralIndirect(gs.m_GpuIndexBuffer, matrix, displayMat, 0, MeshTopology.Triangles, gs.m_DrawArgs, 0, mpb);
+                gs.RenderTileSplats(cmb, cam, i, gaussianRTid);
+                //cmb.DrawProceduralIndirect(gs.m_GpuIndexBuffer, matrix, displayMat, 0, MeshTopology.Triangles, gs.m_DrawArgs, 0, mpb);
                 cmb.EndSample(s_ProfDraw);
             }
         }
@@ -327,12 +329,12 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture, BuiltinRenderTextureType.CameraTarget);
 
             // add sorting, view calc and drawing commands for each splat object
-            Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
+            // Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer); //FIX LATER
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
             m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+            // m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1); // FIX LATER
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
@@ -462,6 +464,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int TileIndex = Shader.PropertyToID("_TileIndex");
             public static readonly int TilesCountX = Shader.PropertyToID("_TileCountX");
             public static readonly int TilesCountY = Shader.PropertyToID("_TileCountY");
+            public static readonly int TileSize = Shader.PropertyToID("_TileSize");
             public static readonly int DisplayIndex = Shader.PropertyToID("_DisplayIndex");
             public static readonly int DisplayChunks = Shader.PropertyToID("_DisplayChunks");
             public static readonly int GaussianSplatRT = Shader.PropertyToID("_GaussianSplatRT");
@@ -515,6 +518,7 @@ namespace GaussianSplatting.Runtime
             CalcViewDataCulled,
             CalcViewDataTiled,
             CollectTileSplats,
+            RenderTileSplats,
             InitVisibleBuffers,
             UpdateEditData,
             InitEditData,
@@ -951,6 +955,37 @@ namespace GaussianSplatting.Runtime
             cmd.EndSample(s_ProfSort);
         }
 
+        internal void RenderTileSplats(CommandBuffer cmb, Camera cam, int tileIndex, RenderTargetIdentifier gaussianRTid)
+        {
+            ComputeShader cs = m_CSSplatUtilities;
+            int kernel = (int)KernelIndices.RenderTileSplats;
+
+            int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
+
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatViewDataRO, m_GpuView);
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatKeys, m_GpuSortKeys);
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatCounterRO, m_GpuSplatCounter); 
+            cmb.SetComputeTextureParam(m_CSSplatUtilities, kernel, Props.GaussianSplatRT, gaussianRTid);
+
+            cmb.SetComputeIntParam(cs, Props.TileIndex, tileIndex);
+            cmb.SetComputeIntParam(cs, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
+            cmb.SetComputeIntParam(cs, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
+            cmb.SetComputeVectorParam(cs, Props.VecScreenParams, new Vector4(screenW, screenH, 0, 0));
+
+            Vector2Int tileSize = new Vector2Int(
+                Mathf.CeilToInt(screenW / gridSize.x), 
+                Mathf.CeilToInt(screenH / gridSize.y)
+            );
+            cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector4(tileSize.x, tileSize.y, 0, 0));
+
+            uint groupSizeX = 8;
+            uint groupSizeY = 8;
+
+            int dispatchX = (tileSize.x + (int)groupSizeX - 1) / (int)groupSizeX;
+            int dispatchY = (tileSize.y + (int)groupSizeY - 1) / (int)groupSizeY;
+
+            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, 1);
+        }
 
         public void Update()
         {

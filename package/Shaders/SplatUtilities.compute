@@ -10,6 +10,7 @@
 #pragma kernel CSCalcViewDataCulled  
 #pragma kernel CSCalcViewDataTiled 
 #pragma kernel CSCollectTileSplats  
+#pragma kernel CSRenderTileSplats  
 #pragma kernel CSUpdateEditData
 #pragma kernel CSInitEditData
 #pragma kernel CSClearBuffer
@@ -447,7 +448,7 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
         float depth = mul(_MatrixMV, float4(splat.pos, 1)).z;
         float r_p = max(length(view.axis1), length(view.axis2)) / abs(depth);
         
-        if (r_p <= _RMin)
+        if (_UseCulling == 1 && r_p <= _RMin)
         {
             culled = true; // reuse behind Cam to avoid using a return;
             centerClipPos.w = 0;
@@ -519,8 +520,92 @@ void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
     uint writeIdx;
     InterlockedAdd(_SplatCounter[0], 1, writeIdx);
     _SplatsKeys[writeIdx] = idx;
-    _SplatsDistances[writeIdx] = FloatToSortableUint(view.pos.z);   
 }
+
+RWTexture2D<float4> _GaussianSplatRT; // Output buffer (e.g., HDR render target)
+
+uint2 _TileSize; // Size of a tile in pixels
+[numthreads(8, 8, 1)]
+void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
+{
+    uint2 localPixel = id.xy;
+    if (localPixel.x >= _TileSize.x || localPixel.y >= _TileSize.y)
+        return;
+
+    uint tileX = _TileIndex % _TileCountX;
+    uint tileY = _TileIndex / _TileCountX;
+    float2 screenSize = float2(_VecScreenParams.xy);
+    uint2 pixelCoord = uint2(tileX * _TileSize.x + localPixel.x,
+                             tileY * _TileSize.y + localPixel.y);
+    // discard outside screen
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    float2 pixCenter = float2(pixelCoord) + 0.5; // sample at pixel center
+
+    float4 accumColor = float4(0, 0, 0, 0);
+    uint counts = _SplatCounterRO[0];
+    for (uint i = 0; i < counts; ++i)
+    {
+        uint splatIndex = _SplatsKeys[i];
+        SplatViewData splat = _SplatViewDataReadOnly[splatIndex];
+        // skip if culled
+        if (splat.pos.w <= 0)
+            continue;
+
+        // Unpack base color & opacity
+        float r = f16tof32(splat.color.x >> 16);
+        float g = f16tof32(splat.color.x & 0xFFFF);
+        float b = f16tof32(splat.color.y >> 16);
+        float baseA = f16tof32(splat.color.y & 0xFFFF);
+        baseA = saturate(baseA);
+        float3 rgb = float3(r, g, b);
+
+        // Compute center in pixel-space
+        float2 centerNDC = splat.pos.xy / splat.pos.w;
+        float2 centerPixel = (centerNDC * 0.5 + 0.5) * screenSize;
+
+        // Retrieve axes in pixel-space. If view.axis1/axis2 are NDC, convert:
+        float2 axis1 = splat.axis1;
+        float2 axis2 = splat.axis2;
+        // If they were in NDC: uncomment:
+        // axis1 *= (screenSize * 0.5);
+        // axis2 *= (screenSize * 0.5);
+
+        // Compute normalized coordinate in ellipse space
+        float2 delta = pixCenter - centerPixel;
+        float det = axis1.x * axis2.y - axis1.y * axis2.x;
+        if (abs(det) < 1e-5)
+            continue;
+        float2x2 invCov = float2x2(axis2.y, -axis1.y, -axis2.x, axis1.x) / det;
+        float2 normPt = mul(invCov, delta);
+        float dist2 = dot(normPt, normPt);
+
+        // Compute Gaussian alpha: exp(-dist2) * baseA
+        // Optionally skip if dist2 large:
+        if (dist2 > 16.0)
+            continue; // e.g., beyond ~4σ radius
+        float gauss = exp(-dist2);
+        float a = gauss * baseA;
+        if (a <= 1e-4)
+            continue;
+
+        // Front-to-back blending
+        accumColor.rgb += (1 - accumColor.a) * rgb * a;
+        accumColor.a += (1 - accumColor.a) * a;
+        if (accumColor.a >= 0.999)
+        {
+            accumColor.a = 1;
+            break;
+        }
+    }
+
+    // Blend with background if needed. If background is black and you want black behind, this is optional.
+    float3 bgColor = float3(0, 0, 0); // or sample from a background texture if needed
+    float3 finalRgb = accumColor.rgb + (1 - accumColor.a) * bgColor;
+    _GaussianSplatRT[pixelCoord] = float4(finalRgb, 1.0);
+}
+
 
 
 RWByteAddressBuffer _DstBuffer;

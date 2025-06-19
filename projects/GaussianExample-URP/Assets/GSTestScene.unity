@@ -402,14 +402,14 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 958209327}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: 0.33207884, y: 0, z: 0, w: 0.94325167}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1110069993}
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 38.79, y: 0, z: 0}
 --- !u!1 &1110069992
 GameObject:
   m_ObjectHideFlags: 0
@@ -711,9 +711,9 @@ MonoBehaviour:
   m_SHOrder: 3
   m_SHOnly: 0
   m_SortNthFrame: 1
-  useTileSystem: 1
-  gridSize: {x: 2, y: 2}
-  useAdaptiveCulling: 1
+  useTileSystem: 0
+  gridSize: {x: 15, y: 15}
+  useAdaptiveCulling: 0
   RMin: 0
   AlfaMin: 0
   m_RenderMode: 0
@@ -724,8 +724,8 @@ MonoBehaviour:
   m_ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
   m_ShaderDebugBoxes: {fileID: 4800000, guid: 4006f2680fd7c8b4cbcb881454c782be, type: 3}
   m_CSSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}
-  currentLine: 3
-  previousLine: 3
+  currentLine: 0
+  previousLine: 0
 --- !u!4 &1609192435
 Transform:
   m_ObjectHideFlags: 0
