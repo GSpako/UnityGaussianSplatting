@@ -529,7 +529,7 @@ namespace GaussianSplatting.Runtime
             SelectionUpdate,
             TranslateSelection,
             RotateSelection,
-            ScaleSelection,
+            ScaleSelection, 
             ExportData,
             CopySplats,
         }
@@ -544,7 +544,7 @@ namespace GaussianSplatting.Runtime
             m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
-        const int kGpuViewDataSize = 40;
+        const int kGpuViewDataSize = 72;
 
         void CreateResourcesForAsset()
         {

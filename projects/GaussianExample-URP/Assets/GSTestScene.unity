@@ -149,16 +149,26 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   locationToCreate: Assets/customPly
-  create: 0
-  outputFileName: planeOfSplats.ply
-  gridWidth: 20
-  gridHeight: 20
-  spacing: 20
+  create: 1
+  outputFileName: SplatTestTiles.ply
+  gridWidth: 5
+  gridHeight: 5
+  spacing: 60
   minScale: 0.2
-  maxScale: 1
+  maxScale: 3
   scaleVariationMode: 0
-  minOpacity: 0
-  maxOpacity: 1
+  allowNonUniformScale: 1
+  randomizeAxesIndependently: 1
+  scaleRangeX: {x: 0.2, y: 1.5}
+  scaleRangeY: {x: 0.2, y: 1.5}
+  scaleRangeZ: {x: 0.2, y: 1.5}
+  scaleVariationModeX: 0
+  scaleVariationModeY: 2
+  scaleVariationModeZ: 1
+  enableRandomJitter: 0
+  maxJitterFraction: 0.8
+  minOpacity: 0.25
+  maxOpacity: 0.5
   opacityVariationMode: 1
   colorByPosition: 1
   minSaturation: 0.5
@@ -712,9 +722,9 @@ MonoBehaviour:
   m_SHOnly: 0
   m_SortNthFrame: 1
   useTileSystem: 0
-  gridSize: {x: 15, y: 15}
+  gridSize: {x: 16, y: 16}
   useAdaptiveCulling: 0
-  RMin: 0
+  RMin: 0.012
   AlfaMin: 0
   m_RenderMode: 0
   m_PointDisplaySize: 1

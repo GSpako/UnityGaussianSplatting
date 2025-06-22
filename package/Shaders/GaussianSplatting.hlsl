@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+﻿// SPDX-License-Identifier: MIT
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
 #pragma enable_d3d11_debug_symbols
@@ -90,6 +90,64 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
+
+// from "EWA Splatting" (Zwicker et al 2002) eq. 31
+float3 CalcCovariance2DTiled(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV, float4x4 matrixP, float4 screenParams)
+{
+    // Transform to view space:
+    float3 viewPos = mul(matrixV, float4(worldPos, 1)).xyz;
+
+    // Clamp XY/Z to avoid extreme off-center splats being clipped badly:
+    // This matches Zwicker et al. “EWA Splatting” approach:
+    float aspect = matrixP._m00 / matrixP._m11;
+    float tanFovX = rcp(matrixP._m00);
+    float tanFovY = rcp(matrixP._m11);
+    float limX = 1.3 * tanFovX;
+    float limY = 1.3 * tanFovY;
+    viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
+    viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
+
+    // Compute focal lengths in pixels:
+    // matrixP._m00 = 1/tan(fov_x), so focal_x_pixels = screenWidth * matrixP._m00 / 2
+    float focal_x = screenParams.x * matrixP._m00 / 2;
+    float focal_y = screenParams.y * matrixP._m11 / 2;
+
+    // Build Jacobian J mapping world-space differential → pixel-space differential:
+    float invZ = 1.0 / viewPos.z;
+    float invZ2 = invZ * invZ;
+    // J is 3×3 but last row zero since z→pixel only uses x,y derivatives.
+    float3x3 J = float3x3(
+        focal_x * invZ, 0.0, -focal_x * viewPos.x * invZ2,
+           0.0, focal_y * invZ, -focal_y * viewPos.y * invZ2,
+           0.0, 0.0, 0.0
+    );
+
+    // Extract the 3×3 part of view matrix (rotation): world→camera linear part
+    float3x3 W = (float3x3) matrixV;
+
+    // Combined transform T = J * W maps world-space diff → pixel-space diff
+    float3x3 T = mul(J, W);
+
+    // Reconstruct the symmetric 3×3 covariance V from cov3d0/cov3d1:
+    // cov3d0 = (sig._m00, sig._m01, sig._m02)
+    // cov3d1 = (sig._m11, sig._m12, sig._m22)
+    float3x3 V = float3x3(
+        cov3d0.x, cov3d0.y, cov3d0.z,
+        cov3d0.y, cov3d1.x, cov3d1.y,
+        cov3d0.z, cov3d1.y, cov3d1.z
+    );
+
+    // Pixel-domain covariance: cov_pixel = T * V * T^T
+    float3x3 cov = mul(T, mul(V, transpose(T)));
+
+    // Low-pass filter: ensure at least ~1px minimal size
+    cov._m00 += 0.3;
+    cov._m11 += 0.3;
+
+    // Return only the 2D covariance entries (xx, xy, yy)
+    return float3(cov._m00, cov._m01, cov._m11);
+}
+
 float3 CalcConic(float3 cov2d)
 {
     float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
@@ -127,7 +185,8 @@ uint2 DecodeMorton2D_16x16(uint t)      // --------EAFBGCHD
     return uint2(t & 0xF, t >> 8);      // --------EFGHABCD
 }
 
-
+static const float LOG2E = 1.4426950216293334961f;
+static const float LN2 = 0.69314718055f;
 static const float SH_C1 = 0.4886025;
 static const float SH_C2[] = { 1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742 };
 static const float SH_C3[] = { -0.5900436, 2.8906114, -0.4570458, 0.3731763, -0.4570458, 1.4453057, -0.5900436 };
@@ -608,12 +667,83 @@ SplatData LoadSplatData(uint idx)
     return s;
 }
 
+bool SegmentIntersectEllipse(float a, float b, float c, float d, float l, float r)
+{
+    // Discriminant
+    float delta = b * b - 4.0f * a * c;
+    if (delta < 0.0f)
+    {
+        // No real roots: no intersection
+        return false;
+    }
+    float twoA = 2.0f * a;
+    float t1 = (l - d) * twoA + b;
+    float t2 = (r - d) * twoA + b;
 
+    if ((t1 <= 0.0f || t1 * t1 <= delta) && (t2 >= 0.0f || t2 * t2 <= delta))
+    {
+        return true;
+    }
+    return false;
+}
+
+bool BlockIntersectEllipse(int2 pixMin, int2 pixMax, float2 center, float3 conic, float power)
+{
+    float w = 2.0f * power;
+
+    float dx;
+    float tileMidX = (pixMin.x + pixMax.x) * 0.5f;
+    if (center.x < tileMidX)
+    {
+        dx = center.x - pixMin.x;
+    }
+    else
+    {
+        dx = center.x - pixMax.x;
+    }
+    float a = conic.z; // Σ⁻¹.yy
+    float b = -2.0f * conic.y * dx; // -2 * Σ⁻¹.xy * dx
+    float c = conic.x * dx * dx - w; // Σ⁻¹.xx * dx^2 - w
+    if (SegmentIntersectEllipse(a, b, c, center.y, pixMin.y, pixMax.y))
+    {
+        return true;
+    }
+
+    float dy;
+    float tileMidY = (pixMin.y + pixMax.y) * 0.5f;
+    if (center.y < tileMidY)
+    {
+        dy = center.y - pixMin.y;
+    }
+    else
+    {
+        dy = center.y - pixMax.y;
+    }
+    a = conic.x; // Σ⁻¹.xx
+    b = -2.0f * conic.y * dy; // -2 * Σ⁻¹.xy * dy
+    c = conic.z * dy * dy - w; // Σ⁻¹.yy * dy^2 - w
+    if (SegmentIntersectEllipse(a, b, c, center.x, pixMin.x, pixMax.x))
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
+bool BlockContainsCenter(int2 pixMin, int2 pixMax, float2 center)
+{
+    return (center.x >= pixMin.x && center.x <= pixMax.x
+         && center.y >= pixMin.y && center.y <= pixMax.y);
+}
 
 struct SplatViewData
 {
-    float4 pos;
-    float2 axis1, axis2;
+    float4 pos; //16
+    float2 axis1, axis2; //16
+    float3 rawConic; //12
+    float4 conic; //12
+    float pow; //4
     uint2 color; // 4xFP16
 };
 

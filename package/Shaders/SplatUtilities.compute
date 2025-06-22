@@ -182,6 +182,7 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 
     #else
 
+    
     // same as in antimatter15/splat
     float diag1 = cov2d.x, diag2 = cov2d.z, offDiag = cov2d.y;
     float mid = 0.5f * (diag1 + diag2);
@@ -384,6 +385,56 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
 }
 
 
+float ndc2Pix(float v, int S)
+{
+    return ((v + 1.0) * S - 1.0) * 0.5;
+}
+
+void DecomposeCovarianceScaled(float3 cov2d, float boundPower, out float2 axis1, out float2 axis2)
+{
+    // Extract elements
+    float a = cov2d.x; // c_xx
+    float b = cov2d.y; // c_xy
+    float d = cov2d.z; // c_yy
+
+    // Compute eigenvalues of [a b; b d]:
+    // trace = a + d, diff = a - d
+    float trace = a + d;
+    float halfDiff = 0.5f * (a - d);
+    // radius = sqrt( ( (a - d)/2 )^2 + b^2 )
+    float radius = sqrt(halfDiff * halfDiff + b * b);
+
+    // eigenvalues:
+    float lambda1 = 0.5f * trace + radius;
+    float lambda2 = 0.5f * trace - radius;
+    // Clamp to non-negative (covariance should be positive semidef, but numeric may cause small negative)
+    lambda2 = max(lambda2, 0.0f);
+    // lambda1 should be >= lambda2; if numeric issues invert, swap (unlikely with above formula)
+
+    // Compute eigenvector for lambda1:
+    float2 dir1;
+    // For symmetric [a b; b d], an eigenvector for lambda1 can be (lambda1 - d, b) or (b, lambda1 - a).
+    // Choose (lambda1 - d, b) unless b~0, then pick axis aligned.
+    if (abs(b) > 1e-6f)
+    {
+        dir1 = normalize(float2(lambda1 - d, b));
+    }
+    else
+    {
+        // If b is zero, matrix is diagonal. Pick direction along larger variance:
+        dir1 = (a >= d) ? float2(1.0f, 0.0f) : float2(0.0f, 1.0f);
+    }
+    // Orthonormal perpendicular:
+    float2 dir2 = float2(-dir1.y, dir1.x);
+
+    // Scale axes by sqrt(eigenvalue * boundPower):
+    // If boundPower <= 0, result will be zero-length axes (no extent).
+    float len1 = sqrt(max(2.0f * lambda1 * boundPower, 0.0f));
+    float len2 = sqrt(max(2.0f * lambda2 * boundPower, 0.0f));
+    axis1 = dir1 * len1;
+    axis2 = dir2 * len2;
+}
+
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
 {
@@ -433,7 +484,8 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
     {
         float4 boxRot = splat.rot;
         float3 boxSize = splat.scale;
-
+        splat.opacity *= opacityScale;
+        
         float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
 
         float3 cov3d0, cov3d1;
@@ -441,11 +493,24 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
         float splatScale2 = splatScale * splatScale;
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
-        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
+        // 2D covariance
+        float3 cov2d = CalcCovariance2DTiled(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
         
-        DecomposeCovariance(cov2d, view.axis1, view.axis2);
+        float3 conic = CalcConic(cov2d); // Σ⁻¹.xx
+        view.rawConic = conic;
+        float log2Opacity = log2(splat.opacity);
         
-        float depth = mul(_MatrixMV, float4(splat.pos, 1)).z;
+        // Convert to base-2 Gaussian coefficients:
+        view.conic.x = (-0.5f * LOG2E) * conic.x;
+        view.conic.y = -LOG2E * conic.y;
+        view.conic.z = (-0.5f * LOG2E) * conic.z;
+        view.conic.w = log2Opacity;
+        
+        view.pow = max(LN2 * 8.0f + LN2 * log2Opacity, 0.0f);
+
+        DecomposeCovarianceScaled(cov2d, view.pow, view.axis1, view.axis2);
+        
+        float depth = mul(_MatrixMV, float4(splat.pos, 1)).z; 
         float r_p = max(length(view.axis1), length(view.axis2)) / abs(depth);
         
         if (_UseCulling == 1 && r_p <= _RMin)
@@ -455,6 +520,9 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
         }
         else
         {
+            float2 centerNDC = view.pos.xy / view.pos.w;
+            float2 screenCenter = float2(ndc2Pix(centerNDC.x, _VecScreenParams.x), ndc2Pix(centerNDC.y, _VecScreenParams.y));
+            view.pos.xy = screenCenter;
             
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
             float3 objViewDir = mul((float3x3) _MatrixWorldToObject, worldViewDir);
@@ -462,7 +530,9 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
 
             half4 col;
             col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0);
-            col.a = min(splat.opacity * opacityScale, 65000);
+            col.a = min(splat.opacity, 65000);
+            
+            //Store the color
             view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
             view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
         }
@@ -479,47 +549,94 @@ uint _TileIndex; //done
 uint _TileCountX, _TileCountY; //done
 //float4 _VecScreenParams; //done
 //uint _SplatCount;// done
-
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _SplatCount)
+    if (idx >= _SplatCount) 
         return;
 
+    // Load the precomputed view data for this splat:
     SplatViewData view = _SplatViewDataReadOnly[idx];
-     
-    // cull if behind camera or invisible
-    if (view.pos.w <= 0)
+
+    // Cull if invisible or behind near plane:
+    if (view.pos.w <= 0.0f)
         return;
 
-    // screen center (in pixels)
-    float2 centerNDC = view.pos.xy / view.pos.w;
-    float2 screenCenter = (centerNDC * 0.5 + 0.5) * float2(_VecScreenParams.xy); // maybe i could do this in calcViewData, but for now lets leave it here
+    // Screen-space center in pixels:
+    float2 screenCenter = view.pos.xy;
 
-    // extent vectors
-    float2 r1 = view.axis1;
-    float2 r2 = view.axis2;
+    // Compute this tile's pixel bounds:
+    // Derive tile coordinates from _TileIndex and counts:
+    uint tileX = _TileIndex % _TileCountX;
+    uint tileY = _TileIndex / _TileCountX;
 
-    // ellipse bounding box (in pixels)
-    float2 bbMin = screenCenter + min(min(r1, r2), -max(r1, r2));
-    float2 bbMax = screenCenter + max(max(r1, r2), -min(r1, r2));
+    int screenWidth = (int) _VecScreenParams.x;
+    int screenHeight = (int) _VecScreenParams.y;
 
-    // tile bounds
-    uint2 tileXY = uint2(_TileIndex % _TileCountX, _TileIndex / _TileCountX);
-    float2 tileSize = float2(_VecScreenParams.xy) / float2(_TileCountX, _TileCountY);
-    float2 tileMin = tileXY * tileSize;
-    float2 tileMax = tileMin + tileSize;
+    // Compute tile size via integer “ceil” division so that all pixels are covered:
+    int tileWidth = (screenWidth + int(_TileCountX) - 1) / int(_TileCountX);
+    int tileHeight = (screenHeight + int(_TileCountY) - 1) / int(_TileCountY);
 
-    // bounding box overlap test
-    if (bbMax.x < tileMin.x || bbMin.x > tileMax.x ||
-        bbMax.y < tileMin.y || bbMin.y > tileMax.y)
+    // Base pixel coordinate of this tile:
+    int baseX = int(tileX) * tileWidth;
+    int baseY = int(tileY) * tileHeight;
+
+    // pixMin is simply the base:
+    int2 pixMin = int2(baseX, baseY);
+
+    // pixMax clamps to the screen’s last pixel:
+    int2 pixMax = int2(
+        min(baseX + tileWidth - 1, screenWidth - 1),
+        min(baseY + tileHeight - 1, screenHeight - 1)
+    );
+
+    // 1) Quick AABB test using the precomputed axes scaled by radius:
+    // view.axis1 and view.axis2 should already be scaled vectors from center to ellipse boundary:
+    //   view.axis1 = dir1 * sqrt(eig1 * boundPower)
+    //   view.axis2 = dir2 * sqrt(eig2 * boundPower)
+    float2 a1 = view.axis1;
+    float2 a2 = view.axis2;
+    // Compute min/max offsets from center along these axes:
+    // For two vectors v1, v2, the bounding box around the ellipse is center + convex hull of {±v1 ±v2}.
+    // A quick way: compute component-wise:
+    float2 cornerMin = min(min(a1, a2), -max(a1, a2));
+    float2 cornerMax = max(max(a1, a2), -min(a1, a2));
+    float2 bbMin = screenCenter + cornerMin;
+    float2 bbMax = screenCenter + cornerMax;
+
+    // If AABB does not overlap tile, skip:
+    if (bbMax.x < pixMin.x || bbMin.x > pixMax.x || bbMax.y < pixMin.y || bbMin.y > pixMax.y)
+    {
         return;
+    }
 
-    // splat intersects this tile
-    uint writeIdx;
-    InterlockedAdd(_SplatCounter[0], 1, writeIdx);
-    _SplatsKeys[writeIdx] = idx;
+    // 2) Precise intersection test: check if tile contains center or intersects ellipse boundary
+    bool intersects = false;
+    if (BlockContainsCenter(pixMin, pixMax, screenCenter))
+    {
+        intersects = true;
+    }
+    else
+    {
+        // Use the same boundPower used when computing axis lengths:
+        float powerForIntersection = view.pow;
+        // conic should be Σ⁻¹ coefficients: 
+        //   conic.x = Σ⁻¹.xx, conic.y = Σ⁻¹.xy (with sign), conic.z = Σ⁻¹.yy
+        float3 conic = view.rawConic;
+        if (BlockIntersectEllipse(pixMin, pixMax, screenCenter, conic, powerForIntersection))
+        {
+            intersects = true;
+        }
+    }
+
+    if (intersects)
+    {
+        // Append to this tile's list:
+        uint writeIdx;
+        InterlockedAdd(_SplatCounter[0], 1, writeIdx);
+        _SplatsKeys[writeIdx] = idx;
+    }
 }
 
 RWTexture2D<float4> _GaussianSplatRT; // Output buffer (e.g., HDR render target)
@@ -537,76 +654,60 @@ void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
     float2 screenSize = float2(_VecScreenParams.xy);
     uint2 pixelCoord = uint2(tileX * _TileSize.x + localPixel.x,
                              tileY * _TileSize.y + localPixel.y);
-    // discard outside screen
     if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
         return;
+    
+    // Front-to-back blending accumulators
+    float3 C = float3(0, 0, 0);
+    float T = 1.0;
 
-    float2 pixCenter = float2(pixelCoord) + 0.5; // sample at pixel center
-
-    float4 accumColor = float4(0, 0, 0, 0);
-    uint counts = _SplatCounterRO[0];
+    uint counts = _SplatCounterRO[0]; // number of splats in this tile
     for (uint i = 0; i < counts; ++i)
     {
         uint splatIndex = _SplatsKeys[i];
         SplatViewData splat = _SplatViewDataReadOnly[splatIndex];
-        // skip if culled
         if (splat.pos.w <= 0)
             continue;
 
-        // Unpack base color & opacity
+        // Unpack color & base alpha:
         float r = f16tof32(splat.color.x >> 16);
         float g = f16tof32(splat.color.x & 0xFFFF);
         float b = f16tof32(splat.color.y >> 16);
-        float baseA = f16tof32(splat.color.y & 0xFFFF);
-        baseA = saturate(baseA);
+        
         float3 rgb = float3(r, g, b);
 
-        // Compute center in pixel-space
-        float2 centerNDC = splat.pos.xy / splat.pos.w;
-        float2 centerPixel = (centerNDC * 0.5 + 0.5) * screenSize;
+        // Compute offset from center:
+        //float2 d = float2(splat.pos.x - pixelCoord.x, splat.pos.y - pixelCoord.y);
+        float2 d = splat.pos.xy - (float2(pixelCoord));
+        
+        // Compute exponent power = view.pow + conic.x*d.x^2 + conic.y*d.x*d.y + conic.z*d.y^2
+        float power = splat.conic.w
+                    + splat.conic.x * (d.x * d.x)
+                    + splat.conic.z * (d.y * d.y)
+                    + splat.conic.y * (d.x * d.y);
 
-        // Retrieve axes in pixel-space. If view.axis1/axis2 are NDC, convert:
-        float2 axis1 = splat.axis1;
-        float2 axis2 = splat.axis2;
-        // If they were in NDC: uncomment:
-        // axis1 *= (screenSize * 0.5);
-        // axis2 *= (screenSize * 0.5);
-
-        // Compute normalized coordinate in ellipse space
-        float2 delta = pixCenter - centerPixel;
-        float det = axis1.x * axis2.y - axis1.y * axis2.x;
-        if (abs(det) < 1e-5)
+        float alpha = exp2(power); 
+        
+        if (alpha <= 1e-3)
             continue;
-        float2x2 invCov = float2x2(axis2.y, -axis1.y, -axis2.x, axis1.x) / det;
-        float2 normPt = mul(invCov, delta);
-        float dist2 = dot(normPt, normPt);
+        
+        // Front-to-back:
+        C += rgb * (alpha * T);
+        T -= (alpha * T);
 
-        // Compute Gaussian alpha: exp(-dist2) * baseA
-        // Optionally skip if dist2 large:
-        if (dist2 > 16.0)
-            continue; // e.g., beyond ~4σ radius
-        float gauss = exp(-dist2);
-        float a = gauss * baseA;
-        if (a <= 1e-4)
-            continue;
-
-        // Front-to-back blending
-        accumColor.rgb += (1 - accumColor.a) * rgb * a;
-        accumColor.a += (1 - accumColor.a) * a;
-        if (accumColor.a >= 0.999)
-        {
-            accumColor.a = 1;
+        if (T <= 1e-3)
             break;
-        }
     }
 
-    // Blend with background if needed. If background is black and you want black behind, this is optional.
-    float3 bgColor = float3(0, 0, 0); // or sample from a background texture if needed
-    float3 finalRgb = accumColor.rgb + (1 - accumColor.a) * bgColor;
-    _GaussianSplatRT[pixelCoord] = float4(finalRgb, 1.0);
+    // Write final:
+    uint flippedY = (uint) screenSize.y - 1 - pixelCoord.y;
+    uint2 writeCoord = uint2(pixelCoord.x, flippedY);
+    
+    float3 bgColor = float3(0, 0, 0); // or sample existing background if needed
+    float3 finalRgb = C + T * bgColor;
+    
+    _GaussianSplatRT[writeCoord] = float4(finalRgb, 1.0);
 }
-
-
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;
