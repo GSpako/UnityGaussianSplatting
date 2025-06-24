@@ -48,6 +48,7 @@
 float4x4 _MatrixObjectToWorld;
 float4x4 _MatrixWorldToObject;
 float4x4 _MatrixMV;
+float4x4 _MatrixMVDistances;
 float4 _VecScreenParams;
 float4 _VecWorldSpaceCameraPos;
 int _SelectionMode;
@@ -289,6 +290,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 }
 
 RWStructuredBuffer<uint> _VisibleSplatSortKeys;
+RWStructuredBuffer<uint> _VisibleSplatSortDistances;
 
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
@@ -300,8 +302,8 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
     SplatData splat = LoadSplatData(idx);
     SplatViewData view = (SplatViewData) 0;
     
+    float3 camSpace = mul(_MatrixMV, float4( splat.pos, 1)).xyz;
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos, 1)).xyz;
-    float3 camSpace = mul(_MatrixMV, float4(splat.pos, 1)).xyz;
     
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
@@ -379,6 +381,8 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
         InterlockedAdd(_SplatCounter[0], 1, writeIdx);
         
         _VisibleSplatSortKeys[writeIdx] = idx;
+        _VisibleSplatSortDistances[writeIdx] = FloatToSortableUint(abs(camSpace.z));
+
     }
     
     _SplatViewData[idx] = view;
@@ -523,7 +527,6 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
             float2 centerNDC = view.pos.xy / view.pos.w;
             float2 screenCenter = float2(ndc2Pix(centerNDC.x, _VecScreenParams.x), ndc2Pix(centerNDC.y, _VecScreenParams.y));
             view.pos.xy = screenCenter;
-            
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
             float3 objViewDir = mul((float3x3) _MatrixWorldToObject, worldViewDir);
             objViewDir = normalize(objViewDir);
@@ -539,6 +542,7 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
     }
     
     _SplatViewData[idx] = view;
+
 }
 
 StructuredBuffer<SplatViewData> _SplatViewDataReadOnly; //done
@@ -635,6 +639,7 @@ void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
         uint writeIdx;
         InterlockedAdd(_SplatCounter[0], 1, writeIdx);
         _SplatsKeys[writeIdx] = idx;
+        _SplatsDistances[writeIdx] = FloatToSortableUint(view.pos.z);
     }
 }
 
@@ -665,8 +670,6 @@ void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
     {
         uint splatIndex = _SplatsKeys[i];
         SplatViewData splat = _SplatViewDataReadOnly[splatIndex];
-        if (splat.pos.w <= 0)
-            continue;
 
         // Unpack color & base alpha:
         float r = f16tof32(splat.color.x >> 16);

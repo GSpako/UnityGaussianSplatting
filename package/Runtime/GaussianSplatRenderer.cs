@@ -22,6 +22,7 @@ namespace GaussianSplatting.Runtime
         internal static readonly ProfilerMarker s_ProfDraw = new(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
         internal static readonly ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
         internal static readonly ProfilerMarker s_ProfCalcView = new(ProfilerCategory.Render, "GaussianSplat.CalcView", MarkerFlags.SampleGPU);
+        internal static readonly ProfilerMarker s_ProfColecTile = new(ProfilerCategory.Render, "GaussianSplat.ColectTile", MarkerFlags.SampleGPU);
         // ReSharper restore MemberCanBePrivate.Global
 
         public static GaussianSplatRenderSystem instance => ms_Instance ??= new GaussianSplatRenderSystem();
@@ -178,12 +179,14 @@ namespace GaussianSplatting.Runtime
             int totalTiles = (int) (gs.gridSize.x * gs.gridSize.y);
             for (int i = 0; i < totalTiles; i++)
             {
+                cmb.BeginSample(s_ProfColecTile);
                 gs.ResetCounter(cmb);
                 gs.CollectTileSplats(cmb, i);
                 gs.CopyCounterToDrawArgs(cmb);
-                 
+                cmb.BeginSample(s_ProfColecTile);
+
                 var matrix = gs.transform.localToWorldMatrix;
-                gs.SortPoints(cmb, cam, matrix);
+                gs.SortPoints(cmb, cam, matrix, true);
 
                 mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
 
@@ -231,7 +234,7 @@ namespace GaussianSplatting.Runtime
             gs.CopyCounterToDrawArgs(cmb);
 
             var matrix = gs.transform.localToWorldMatrix;
-            gs.SortPoints(cmb, cam, matrix);
+            gs.SortPoints(cmb, cam, matrix, false);
 
             mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
 
@@ -249,7 +252,7 @@ namespace GaussianSplatting.Runtime
             // sort
             var matrix = gs.transform.localToWorldMatrix;
             if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
-                gs.SortPoints(cmb, cam, matrix);
+                gs.SortPoints(cmb, cam, matrix, true);
             ++gs.m_FrameCounter;
 
             // cache view
@@ -471,8 +474,9 @@ namespace GaussianSplatting.Runtime
             public static readonly int SplatKeys = Shader.PropertyToID("_SplatsKeys");
             public static readonly int SplatDistances = Shader.PropertyToID("_SplatsDistances");
             public static readonly int SplatSortKeys = Shader.PropertyToID("_SplatSortKeys");
-            public static readonly int SplatSortDistances = Shader.PropertyToID("_SplatSortDistances");
-            public static readonly int VisibleSplatSortKeys = Shader.PropertyToID("_VisibleSplatSortKeys");
+            public static readonly int SplatSortDistances = Shader.PropertyToID("_SplatSortDistances"); 
+            public static readonly int VisibleSplatSortKeys = Shader.PropertyToID("_VisibleSplatSortKeys"); 
+            public static readonly int VisibleSplatSortDistances = Shader.PropertyToID("_VisibleSplatSortDistances");
             public static readonly int SplatCounter = Shader.PropertyToID("_SplatCounter");
             public static readonly int SplatCounterRO = Shader.PropertyToID("_SplatCounterRO");
             public static readonly int Quad = Shader.PropertyToID("_Quad");
@@ -829,6 +833,7 @@ namespace GaussianSplatting.Runtime
             SetAssetDataOnCS(cmb, KernelIndices.CalcViewDataCulled);
 
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, Props.VisibleSplatSortKeys, m_GpuSortKeys);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, Props.VisibleSplatSortDistances, m_GpuSortDistances);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataCulled, Props.SplatCounter, m_GpuSplatCounter);
 
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
@@ -913,7 +918,7 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetCounter, 1, 1, 1);
         }
 
-        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
+        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix, bool calcDistances)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
@@ -925,16 +930,19 @@ namespace GaussianSplatting.Runtime
 
             // calculate distance to the camera for each splat
             cmd.BeginSample(s_ProfSort);
-            cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatSortDistances, m_GpuSortDistances);
-            cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatSortKeys, m_GpuSortKeys);
-            cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatChunks, m_GpuChunks);
-            cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatPos, m_GpuPosData);
-            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.posFormat);
-            cmd.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, worldToCamMatrix * matrix);
-            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_SplatCount);
-            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
-            m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
-            cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+            if (calcDistances)
+            {
+                cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatSortDistances, m_GpuSortDistances);
+                cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatSortKeys, m_GpuSortKeys);
+                cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatChunks, m_GpuChunks);
+                cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatPos, m_GpuPosData);
+                cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.posFormat);
+                cmd.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, worldToCamMatrix * matrix);
+                cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_SplatCount);
+                cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
+                m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
+                cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+            }
 
             // sort the splats
             EnsureSorterAndRegister();
