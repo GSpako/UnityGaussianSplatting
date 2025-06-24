@@ -101,7 +101,7 @@ float3 CalcCovariance2DTiled(float3 worldPos, float3 cov3d0, float3 cov3d1, floa
     // This matches Zwicker et al. “EWA Splatting” approach:
     float aspect = matrixP._m00 / matrixP._m11;
     float tanFovX = rcp(matrixP._m00);
-    float tanFovY = rcp(matrixP._m11);
+    float tanFovY = rcp(matrixP._m11 * aspect);
     float limX = 1.3 * tanFovX;
     float limY = 1.3 * tanFovY;
     viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;

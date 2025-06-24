@@ -978,12 +978,12 @@ namespace GaussianSplatting.Runtime
             );
             cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector4(tileSize.x, tileSize.y, 0, 0));
 
-            uint groupSizeX = 8;
-            uint groupSizeY = 8;
+            uint groupSizeX = 16;
+            uint groupSizeY = 16;
 
             int dispatchX = (tileSize.x + (int)groupSizeX - 1) / (int)groupSizeX;
             int dispatchY = (tileSize.y + (int)groupSizeY - 1) / (int)groupSizeY;
-
+            m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.RenderTileSplats, out uint gsX, out uint gsY, out _);
             cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, 1);
         }
 

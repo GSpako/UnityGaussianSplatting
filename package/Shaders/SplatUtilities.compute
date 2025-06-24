@@ -387,7 +387,7 @@ void CSCalcViewDataCulled(uint3 id : SV_DispatchThreadID)
 
 float ndc2Pix(float v, int S)
 {
-    return ((v + 1.0) * S - 1.0) * 0.5;
+    return ((v * 0.5 + 0.5) * S);
 }
 
 void DecomposeCovarianceScaled(float3 cov2d, float boundPower, out float2 axis1, out float2 axis2)
@@ -547,8 +547,7 @@ RWStructuredBuffer<uint> _SplatsDistances;
 
 uint _TileIndex; //done
 uint _TileCountX, _TileCountY; //done
-//float4 _VecScreenParams; //done
-//uint _SplatCount;// done
+
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
 {
@@ -642,7 +641,7 @@ void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
 RWTexture2D<float4> _GaussianSplatRT; // Output buffer (e.g., HDR render target)
 
 uint2 _TileSize; // Size of a tile in pixels
-[numthreads(8, 8, 1)]
+[numthreads(16, 16, 1)]
 void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
 {
     uint2 localPixel = id.xy;
@@ -682,9 +681,9 @@ void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
         
         // Compute exponent power = view.pow + conic.x*d.x^2 + conic.y*d.x*d.y + conic.z*d.y^2
         float power = splat.conic.w
-                    + splat.conic.x * (d.x * d.x)
-                    + splat.conic.z * (d.y * d.y)
-                    + splat.conic.y * (d.x * d.y);
+                    + splat.conic.x * d.x * d.x
+                    + splat.conic.z * d.y * d.y
+                    + splat.conic.y * d.x * d.y;
 
         float alpha = exp2(power); 
         
