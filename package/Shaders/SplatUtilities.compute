@@ -3,6 +3,7 @@
 #pragma enable_d3d11_debug_symbols
 
 #pragma kernel CSResetCounter
+#pragma kernel CSResetTileCounter
 #pragma kernel CSCopyCounterToDrawArgs
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
@@ -72,6 +73,19 @@ RWStructuredBuffer<uint> _SplatCounter;
 void CSResetCounter(uint3 id : SV_DispatchThreadID)
 {
     _SplatCounter[0] = 0;
+}
+
+RWStructuredBuffer<uint> _SplatTileCounter;
+uint _TotalTiles;
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void CSResetTileCounter(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _TotalTiles)
+        return;
+    
+    _SplatTileCounter[idx] = 0;
 }
 
 // Copy counter value into draw args buffer
@@ -439,6 +453,7 @@ void DecomposeCovarianceScaled(float3 cov2d, float boundPower, out float2 axis1,
     axis2 = dir2 * len2;
 }
 
+
 [numthreads(GROUP_SIZE, 1, 1)]
 void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
 {
@@ -450,6 +465,7 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
     SplatViewData view = (SplatViewData) 0;
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos, 1)).xyz;
+    float3 camSpace = mul(_MatrixMV, float4( splat.pos, 1)).xyz;
     
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
@@ -527,6 +543,7 @@ void CSCalcViewDataTiled(uint3 id : SV_DispatchThreadID)
             float2 centerNDC = view.pos.xy / view.pos.w;
             float2 screenCenter = float2(ndc2Pix(centerNDC.x, _VecScreenParams.x), ndc2Pix(centerNDC.y, _VecScreenParams.y));
             view.pos.xy = screenCenter;
+            view.pos.z = abs(camSpace.z);
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
             float3 objViewDir = mul((float3x3) _MatrixWorldToObject, worldViewDir);
             objViewDir = normalize(objViewDir);
@@ -549,167 +566,162 @@ StructuredBuffer<SplatViewData> _SplatViewDataReadOnly; //done
 RWStructuredBuffer<uint> _SplatsKeys;
 RWStructuredBuffer<uint> _SplatsDistances;
 
-uint _TileIndex; //done
+uint _StartTile; //done
+uint _NumTiles;
 uint _TileCountX, _TileCountY; //done
 
 [numthreads(GROUP_SIZE, 1, 1)]
-void CSCollectTileSplats(uint3 id : SV_DispatchThreadID)
+void CSCollectTileSplats(
+    uint3 dispatchId : SV_DispatchThreadID,
+    uint3 groupId : SV_GroupID
+)
 {
-    uint idx = id.x;
+    uint idx = dispatchId.x;
     if (idx >= _SplatCount) 
         return;
 
-    // Load the precomputed view data for this splat:
+    // which tile in our range?
+    uint localTile = groupId.y;
+    if (localTile >= _NumTiles)
+        return;
+    uint tileIndex = _StartTile + localTile;
+
+    // load view data:
     SplatViewData view = _SplatViewDataReadOnly[idx];
 
     // Cull if invisible or behind near plane:
     if (view.pos.w <= 0.0f)
         return;
 
-    // Screen-space center in pixels:
     float2 screenCenter = view.pos.xy;
 
-    // Compute this tile's pixel bounds:
-    // Derive tile coordinates from _TileIndex and counts:
-    uint tileX = _TileIndex % _TileCountX;
-    uint tileY = _TileIndex / _TileCountX;
+    // derive tile X/Y from tileIndex:
+    uint tileX = tileIndex % _TileCountX;
+    uint tileY = tileIndex / _TileCountX;
 
-    int screenWidth = (int) _VecScreenParams.x;
-    int screenHeight = (int) _VecScreenParams.y;
+    int screenW = (int) _VecScreenParams.x;
+    int screenH = (int) _VecScreenParams.y;
 
-    // Compute tile size via integer “ceil” division so that all pixels are covered:
-    int tileWidth = (screenWidth + int(_TileCountX) - 1) / int(_TileCountX);
-    int tileHeight = (screenHeight + int(_TileCountY) - 1) / int(_TileCountY);
+    int tileW = (screenW + int(_TileCountX) - 1) / int(_TileCountX);
+    int tileH = (screenH + int(_TileCountY) - 1) / int(_TileCountY);
 
-    // Base pixel coordinate of this tile:
-    int baseX = int(tileX) * tileWidth;
-    int baseY = int(tileY) * tileHeight;
+    int baseX = int(tileX) * tileW;
+    int baseY = int(tileY) * tileH;
 
-    // pixMin is simply the base:
     int2 pixMin = int2(baseX, baseY);
-
-    // pixMax clamps to the screen’s last pixel:
     int2 pixMax = int2(
-        min(baseX + tileWidth - 1, screenWidth - 1),
-        min(baseY + tileHeight - 1, screenHeight - 1)
+        min(baseX + tileW - 1, screenW - 1),
+        min(baseY + tileH - 1, screenH - 1)
     );
 
-    // 1) Quick AABB test using the precomputed axes scaled by radius:
-    // view.axis1 and view.axis2 should already be scaled vectors from center to ellipse boundary:
-    //   view.axis1 = dir1 * sqrt(eig1 * boundPower)
-    //   view.axis2 = dir2 * sqrt(eig2 * boundPower)
-    float2 a1 = view.axis1;
-    float2 a2 = view.axis2;
-    // Compute min/max offsets from center along these axes:
-    // For two vectors v1, v2, the bounding box around the ellipse is center + convex hull of {±v1 ±v2}.
-    // A quick way: compute component-wise:
+    // AABB test:
+    float2 a1 = view.axis1, a2 = view.axis2;
     float2 cornerMin = min(min(a1, a2), -max(a1, a2));
     float2 cornerMax = max(max(a1, a2), -min(a1, a2));
     float2 bbMin = screenCenter + cornerMin;
     float2 bbMax = screenCenter + cornerMax;
 
-    // If AABB does not overlap tile, skip:
-    if (bbMax.x < pixMin.x || bbMin.x > pixMax.x || bbMax.y < pixMin.y || bbMin.y > pixMax.y)
-    {
-        return;
-    }
-
-    // 2) Precise intersection test: check if tile contains center or intersects ellipse boundary
+    // intersection:
     bool intersects = false;
-    if (BlockContainsCenter(pixMin, pixMax, screenCenter))
+    if (BlockContainsCenter(pixMin, pixMax, screenCenter) ||
+        BlockIntersectEllipse(pixMin, pixMax, screenCenter, view.rawConic, view.pow))
     {
         intersects = true;
-    }
-    else
-    {
-        // Use the same boundPower used when computing axis lengths:
-        float powerForIntersection = view.pow;
-        // conic should be Σ⁻¹ coefficients: 
-        //   conic.x = Σ⁻¹.xx, conic.y = Σ⁻¹.xy (with sign), conic.z = Σ⁻¹.yy
-        float3 conic = view.rawConic;
-        if (BlockIntersectEllipse(pixMin, pixMax, screenCenter, conic, powerForIntersection))
-        {
-            intersects = true;
-        }
     }
 
     if (intersects)
     {
-        // Append to this tile's list:
         uint writeIdx;
         InterlockedAdd(_SplatCounter[0], 1, writeIdx);
+        InterlockedAdd(_SplatTileCounter[tileIndex], 1);
         _SplatsKeys[writeIdx] = idx;
-        _SplatsDistances[writeIdx] = FloatToSortableUint(view.pos.z);
+        _SplatsDistances[writeIdx] = (tileIndex & 0xFF) << 24 | FloatToSortableUint(view.pos.z) >> 8;
     }
+
 }
 
 RWTexture2D<float4> _GaussianSplatRT; // Output buffer (e.g., HDR render target)
-
-uint2 _TileSize; // Size of a tile in pixels
-[numthreads(16, 16, 1)]
-void CSRenderTileSplats(uint3 id : SV_DispatchThreadID)
+[numthreads(32, 32, 1)]
+void CSRenderTileSplats(
+    uint3 tid : SV_GroupThreadID,
+    uint3 groupId : SV_GroupID)
 {
-    uint2 localPixel = id.xy;
-    if (localPixel.x >= _TileSize.x || localPixel.y >= _TileSize.y)
+    uint localTile = groupId.z;
+    if (localTile >= _NumTiles)
         return;
 
-    uint tileX = _TileIndex % _TileCountX;
-    uint tileY = _TileIndex / _TileCountX;
-    float2 screenSize = float2(_VecScreenParams.xy);
-    uint2 pixelCoord = uint2(tileX * _TileSize.x + localPixel.x,
-                             tileY * _TileSize.y + localPixel.y);
-    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+    uint tileIndex = _StartTile + localTile;
+    uint tileX = tileIndex % _TileCountX;
+    uint tileY = tileIndex / _TileCountX;
+
+    // compute screen/tile dims
+    int screenW = (int) _VecScreenParams.x;
+    int screenH = (int) _VecScreenParams.y;
+    int cols = (int) _TileCountX;
+    // ceil(screenW / cols)
+    int tileW = (screenW + cols - 1) / cols;
+    int x0 = tileX * tileW;
+    int x1 = min(x0 + tileW, screenW);
+
+    int rows = (int) _TileCountY;
+    int tileH = (screenH + rows - 1) / rows;
+    int y0 = tileY * tileH;
+    int y1 = min(y0 + tileH, screenH);
+
+    // global pixel coordinate
+    uint px = uint(x0) + groupId.x * 32 + tid.x;
+    uint py = uint(y0) + groupId.y * 32 + tid.y;
+
+    // clip out both the padding and any threads outside the tile’s true rectangle
+    if (px < uint(x0) || px >= uint(x1) ||
+        py < uint(y0) || py >= uint(y1))
         return;
-    
-    // Front-to-back blending accumulators
-    float3 C = float3(0, 0, 0);
+
+    // now do your normal front-to-back composite for this pixel:
+    uint2 pixelCoord = uint2(px, py);
+    float2 pixelCenter = float2(px, py);
+
+    uint counts = _SplatTileCounter[tileIndex];
+    uint baseOffset = 0;
+    for (uint t = 0; t < localTile; ++t)
+        baseOffset += _SplatTileCounter[_StartTile + t];
+
+    float3 C = 0;
     float T = 1.0;
-
-    uint counts = _SplatCounterRO[0]; // number of splats in this tile
     for (uint i = 0; i < counts; ++i)
     {
-        uint splatIndex = _SplatsKeys[i];
-        SplatViewData splat = _SplatViewDataReadOnly[splatIndex];
+        uint splatIdx = _SplatsKeys[baseOffset + i];
+        SplatViewData splat = _SplatViewDataReadOnly[splatIdx];
 
-        // Unpack color & base alpha:
-        float r = f16tof32(splat.color.x >> 16);
-        float g = f16tof32(splat.color.x & 0xFFFF);
-        float b = f16tof32(splat.color.y >> 16);
-        
-        float3 rgb = float3(r, g, b);
+        // unpack SH-lit color
+        float3 rgb = float3(
+            f16tof32(splat.color.x >> 16),
+            f16tof32(splat.color.x & 0xFFFF),
+            f16tof32(splat.color.y >> 16)
+        );
 
-        // Compute offset from center:
-        //float2 d = float2(splat.pos.x - pixelCoord.x, splat.pos.y - pixelCoord.y);
-        float2 d = splat.pos.xy - (float2(pixelCoord));
-        
-        // Compute exponent power = view.pow + conic.x*d.x^2 + conic.y*d.x*d.y + conic.z*d.y^2
-        float power = splat.conic.w
-                    + splat.conic.x * d.x * d.x
-                    + splat.conic.z * d.y * d.y
-                    + splat.conic.y * d.x * d.y;
+        float2 d = splat.pos.xy - pixelCenter;
+        float power =
+              splat.conic.w
+            + splat.conic.x * d.x * d.x
+            + splat.conic.y * d.x * d.y
+            + splat.conic.z * d.y * d.y;
 
-        float alpha = exp2(power); 
-        
-        if (alpha <= 1e-3)
+        float alpha = exp2(power);
+        if (alpha < 1e-3)
             continue;
-        
-        // Front-to-back:
-        C += rgb * (alpha * T);
-        T -= (alpha * T);
 
-        if (T <= 1e-3)
+        C += rgb * (alpha * T);
+        T -= alpha * T;
+        if (T < 1e-3)
             break;
     }
 
-    // Write final:
-    uint flippedY = (uint) screenSize.y - 1 - pixelCoord.y;
-    uint2 writeCoord = uint2(pixelCoord.x, flippedY);
-    
-    float3 bgColor = float3(0, 0, 0); // or sample existing background if needed
-    float3 finalRgb = C + T * bgColor;
-    
-    _GaussianSplatRT[writeCoord] = float4(finalRgb, 1.0);
+    // flip Y and write out
+    uint flippedY = uint(screenH) - 1 - pixelCoord.y;
+    _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
+
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;

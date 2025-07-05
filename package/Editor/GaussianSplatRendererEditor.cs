@@ -37,7 +37,8 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
         SerializedProperty m_UseTileSystem;
-        SerializedProperty m_GridSize;
+        SerializedProperty m_GridSize; 
+        SerializedProperty m_NumTiles;
         SerializedProperty m_UseAdaptiveCulling;
         SerializedProperty m_RMin;
         SerializedProperty m_AlfaMin;
@@ -83,6 +84,7 @@ namespace GaussianSplatting.Editor
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
             m_UseTileSystem = serializedObject.FindProperty("useTileSystem");
             m_GridSize = serializedObject.FindProperty("gridSize");
+            m_NumTiles = serializedObject.FindProperty("numTiles");
             m_UseAdaptiveCulling = serializedObject.FindProperty("useAdaptiveCulling");
             m_RMin = serializedObject.FindProperty("RMin");
             m_AlfaMin = serializedObject.FindProperty("AlfaMin");
@@ -121,6 +123,7 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropOpacityScale);
             EditorGUILayout.PropertyField(m_PropSHOrder);
             EditorGUILayout.PropertyField(m_PropSHOnly);
+
             if (!m_UseAdaptiveCulling.boolValue)
                 EditorGUILayout.PropertyField(m_PropSortNthFrame);
 
@@ -130,7 +133,10 @@ namespace GaussianSplatting.Editor
             // Tile System
             EditorGUILayout.PropertyField(m_UseTileSystem, new GUIContent("Use the tile System"));
             if (m_UseTileSystem.boolValue)
+            {
                 EditorGUILayout.PropertyField(m_GridSize, new GUIContent("Grid size"));
+                EditorGUILayout.PropertyField(m_NumTiles, new GUIContent("Tiles Batch"));
+            }
 
             // Culling
             EditorGUILayout.PropertyField(m_UseAdaptiveCulling, new GUIContent("Use Adaptive Culling"));

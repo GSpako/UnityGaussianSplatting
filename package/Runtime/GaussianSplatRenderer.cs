@@ -147,52 +147,25 @@ namespace GaussianSplatting.Runtime
             gs.EnsureMaterials();
             matComposite = gs.m_MatComposite;
 
-            // cache view
-            mpb.Clear();
-            Material displayMat = gs.m_RenderMode switch
-            {
-                GaussianSplatRenderer.RenderMode.DebugPoints => gs.m_MatDebugPoints,
-                GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
-                GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
-                GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
-                _ => gs.m_MatSplats
-            };
-            if (displayMat == null)
-                return;
-
-            gs.SetAssetDataOnMaterial(mpb);
-            mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
-            mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
-            mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
-            mpb.SetFloat(GaussianSplatRenderer.Props.SplatScale, gs.m_SplatScale);
-            mpb.SetFloat(GaussianSplatRenderer.Props.SplatOpacityScale, gs.m_OpacityScale);
-            mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, gs.m_PointDisplaySize);
-            mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
-            mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, gs.m_SHOnly ? 1 : 0);
-            mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
-            mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
-
             cmb.BeginSample(s_ProfCalcView);
             gs.CalcViewDataTiled(cmb, cam);
             cmb.EndSample(s_ProfCalcView);
 
+            gs.ResetTileCounter(cmb);
+
             int totalTiles = (int) (gs.gridSize.x * gs.gridSize.y);
-            for (int i = 0; i < totalTiles; i++)
+            for (int i = 0; i < totalTiles; i += gs.numTiles)
             {
                 cmb.BeginSample(s_ProfColecTile);
                 gs.ResetCounter(cmb);
                 gs.CollectTileSplats(cmb, i);
-                gs.CopyCounterToDrawArgs(cmb);
-                cmb.BeginSample(s_ProfColecTile);
+                cmb.EndSample(s_ProfColecTile);
 
                 var matrix = gs.transform.localToWorldMatrix;
-                gs.SortPoints(cmb, cam, matrix, true);
-
-                mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
+                gs.SortPoints(cmb, cam, matrix, false);
 
                 cmb.BeginSample(s_ProfDraw);
                 gs.RenderTileSplats(cmb, cam, i, gaussianRTid);
-                //cmb.DrawProceduralIndirect(gs.m_GpuIndexBuffer, matrix, displayMat, 0, MeshTopology.Triangles, gs.m_DrawArgs, 0, mpb);
                 cmb.EndSample(s_ProfDraw);
             }
         }
@@ -373,6 +346,8 @@ namespace GaussianSplatting.Runtime
         public bool useTileSystem = false;
         [Tooltip("Grid used in the tile system")]
         public Vector2 gridSize = Vector2.one;
+        [Tooltip("Number of tiles per dispatch")]
+        public int numTiles = 1;
 
         public bool useAdaptiveCulling = true;
         [Range(0, 1)]
@@ -401,7 +376,8 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_GpuSortDistances;
         internal GraphicsBuffer m_GpuSortKeys;
 
-        internal GraphicsBuffer m_GpuSplatCounter;
+        internal GraphicsBuffer m_GpuSplatCounter; 
+        internal GraphicsBuffer m_GpuSplatTileCounter;
         internal GraphicsBuffer m_DrawArgs;
 
         GraphicsBuffer m_GpuPosData;
@@ -467,6 +443,8 @@ namespace GaussianSplatting.Runtime
             public static readonly int TileIndex = Shader.PropertyToID("_TileIndex");
             public static readonly int TilesCountX = Shader.PropertyToID("_TileCountX");
             public static readonly int TilesCountY = Shader.PropertyToID("_TileCountY");
+            public static readonly int NumTiles = Shader.PropertyToID("_NumTiles");
+            public static readonly int StartTile = Shader.PropertyToID("_StartTile");
             public static readonly int TileSize = Shader.PropertyToID("_TileSize");
             public static readonly int DisplayIndex = Shader.PropertyToID("_DisplayIndex");
             public static readonly int DisplayChunks = Shader.PropertyToID("_DisplayChunks");
@@ -478,6 +456,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int VisibleSplatSortKeys = Shader.PropertyToID("_VisibleSplatSortKeys"); 
             public static readonly int VisibleSplatSortDistances = Shader.PropertyToID("_VisibleSplatSortDistances");
             public static readonly int SplatCounter = Shader.PropertyToID("_SplatCounter");
+            public static readonly int SplatTileCounter = Shader.PropertyToID("_SplatTileCounter");
             public static readonly int SplatCounterRO = Shader.PropertyToID("_SplatCounterRO");
             public static readonly int Quad = Shader.PropertyToID("_Quad");
             public static readonly int DrawArgs = Shader.PropertyToID("_DrawArgs");
@@ -488,6 +467,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int MatrixObjectToWorld = Shader.PropertyToID("_MatrixObjectToWorld");
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
+            public static readonly int TotalTiles = Shader.PropertyToID("_TotalTiles");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int CameraTargetTexture = Shader.PropertyToID("_CameraTargetTexture");
             public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
@@ -515,6 +495,7 @@ namespace GaussianSplatting.Runtime
         enum KernelIndices
         {
             ResetCounter,
+            ResetTileCounter,
             CopyCounterToDrawArgs,
             SetIndices,
             CalcDistances,
@@ -602,10 +583,15 @@ namespace GaussianSplatting.Runtime
             { name = "DrawArguments"};
             m_DrawArgs.SetData(new uint[] { 6, (uint)m_Asset.splatCount, 0, 0, 0 });
 
-            m_GpuSplatCounter = new GraphicsBuffer(GraphicsBuffer.Target.Counter | 
-                                    GraphicsBuffer.Target.Structured, 
+            m_GpuSplatCounter = new GraphicsBuffer(GraphicsBuffer.Target.Counter |
+                                    GraphicsBuffer.Target.Structured,
                                     1, sizeof(uint))
             { name = "GaussianSplatCounter" };
+            m_GpuSplatTileCounter = new GraphicsBuffer(GraphicsBuffer.Target.Counter |
+                                    GraphicsBuffer.Target.Structured,
+                                    (int)(gridSize.x * gridSize.y), sizeof(uint))
+            { name = "GaussianSplatTileCounter" };
+
             m_GpuSplatCounter.SetData(new uint[] { (uint)splatCount });
 
             InitSortBuffers(splatCount);
@@ -745,6 +731,9 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuEditCountsBounds);
             DisposeBuffer(ref m_GpuEditCutouts);
             DisposeBuffer(ref m_DrawArgs);
+
+            DisposeBuffer(ref m_GpuSplatCounter);
+            DisposeBuffer(ref m_GpuSplatTileCounter);
 
             m_SorterArgs.resources.Dispose();
 
@@ -903,19 +892,32 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CollectTileSplats, Props.SplatDistances, m_GpuSortDistances);
 
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CollectTileSplats, Props.SplatCounter, m_GpuSplatCounter);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CollectTileSplats, Props.SplatTileCounter, m_GpuSplatTileCounter);
 
-            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TileIndex, index);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.StartTile, index);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.NumTiles, numTiles);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
 
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CollectTileSplats, out uint gsX, out _, out _);
-            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CollectTileSplats, (m_GpuView.count + (int)gsX - 1) / (int)gsX, 1, 1);
+            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CollectTileSplats, (m_GpuView.count + (int)gsX - 1) / (int)gsX, numTiles, 1);
         }
 
         internal void ResetCounter(CommandBuffer cmb)
         {
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ResetCounter, Props.SplatCounter, m_GpuSplatCounter);
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetCounter, 1, 1, 1);
+        }
+
+        internal void ResetTileCounter(CommandBuffer cmb)
+        {
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ResetTileCounter, Props.SplatTileCounter, m_GpuSplatTileCounter);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, (int)(gridSize.x*gridSize.y));
+
+            m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ResetTileCounter, out uint gsX, out _, out _);
+            int totalTiles = Mathf.FloorToInt(gridSize.x * gridSize.y);
+            int groups = (totalTiles + (int)gsX - 1) / (int)gsX;
+            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetTileCounter, groups, 1, 1);
         }
 
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix, bool calcDistances)
@@ -974,8 +976,10 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(cs, kernel, Props.SplatKeys, m_GpuSortKeys);
             cmb.SetComputeBufferParam(cs, kernel, Props.SplatCounterRO, m_GpuSplatCounter); 
             cmb.SetComputeTextureParam(m_CSSplatUtilities, kernel, Props.GaussianSplatRT, gaussianRTid);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, kernel, Props.SplatTileCounter, m_GpuSplatTileCounter);
 
-            cmb.SetComputeIntParam(cs, Props.TileIndex, tileIndex);
+            cmb.SetComputeIntParam(cs, Props.StartTile, tileIndex);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.NumTiles, numTiles);
             cmb.SetComputeIntParam(cs, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
             cmb.SetComputeIntParam(cs, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
             cmb.SetComputeVectorParam(cs, Props.VecScreenParams, new Vector4(screenW, screenH, 0, 0));
@@ -986,13 +990,13 @@ namespace GaussianSplatting.Runtime
             );
             cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector4(tileSize.x, tileSize.y, 0, 0));
 
-            uint groupSizeX = 16;
-            uint groupSizeY = 16;
+            uint groupSizeX = 32;
+            uint groupSizeY = 32;
 
             int dispatchX = (tileSize.x + (int)groupSizeX - 1) / (int)groupSizeX;
             int dispatchY = (tileSize.y + (int)groupSizeY - 1) / (int)groupSizeY;
-            m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.RenderTileSplats, out uint gsX, out uint gsY, out _);
-            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, 1);
+            //m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.RenderTileSplats, out uint gsX, out uint gsY, out _);
+            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, numTiles);
         }
 
         public void Update()
