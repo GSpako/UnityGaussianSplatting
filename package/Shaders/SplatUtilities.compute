@@ -894,90 +894,107 @@ void CSRenderTileSplats(
 }
 
 StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
+groupshared SplatTileData g_splatsShared[1024];
 
 [numthreads(TILE_GROUP_SIZE, TILE_GROUP_SIZE, 1)]
 void CSRenderAllTileSplats(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
+
     uint localTile = groupId.z;
-    if (localTile >= _NumTiles)
+    if (localTile >= _NumTiles) 
         return;
 
-    uint tileIndex = _StartTile + localTile;
+    uint tileIndex = localTile;
     uint tileX = tileIndex % _TileCountX;
     uint tileY = tileIndex / _TileCountX;
-    
-    // compute screen/tile dims
+
     int screenW = (int) _VecScreenParams.x;
     int screenH = (int) _VecScreenParams.y;
     int tileW = _TileSize.x;
     int tileH = _TileSize.y;
-    
-    int cols = (int) _TileCountX;
-    //int tileW = (screenW + cols - 1) / cols;
+
+    // compute pixel within full screen
+    uint px = tileX * tileW + groupId.x * TILE_GROUP_SIZE + tid.x;
+    uint py = tileY * tileH + groupId.y * TILE_GROUP_SIZE + tid.y;
+
+    // exact same “border‐check” as in CSRenderTileSplats:
     int x0 = tileX * tileW;
-    int x1 = min(x0 + tileW, screenW);
-
-    int rows = (int) _TileCountY;
-    //int tileH = (screenH + rows - 1) / rows;
     int y0 = tileY * tileH;
+    int x1 = min(x0 + tileW, screenW);
     int y1 = min(y0 + tileH, screenH);
+    bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
 
-    // global pixel coordinate
-    uint px = uint(x0) + groupId.x * TILE_GROUP_SIZE + tid.x;
-    uint py = uint(y0) + groupId.y * TILE_GROUP_SIZE + tid.y;
-
-    // clip out both the padding and any threads outside the tile’s true rectangle
-    if (px < uint(x0) || px >= uint(x1) ||
-        py < uint(y0) || py >= uint(y1))
-        return;
-
-    // now do your normal front-to-back composite for this pixel:
-    uint2 pixelCoord = uint2(px, py);
-    float2 pixelCenter = float2(px, py);
-
+    // Compute splat count and base offset
     uint counts = _SplatTileCounter[tileIndex];
     uint baseOffset = 0;
     for (uint t = 0; t < localTile; ++t)
-        baseOffset += _SplatTileCounter[_StartTile + t];
+        baseOffset += _SplatTileCounter[t];
 
-    float3 C = 0;
-    float T = 1.0;
-    for (uint i = 0; i < counts; ++i)
+    // Flattened thread index for cooperative load
+    uint flatIdx = tid.y * TILE_GROUP_SIZE + tid.x;
+    uint totalThreads = TILE_GROUP_SIZE * TILE_GROUP_SIZE;
+
+    // Accumulators
+    float3 C = float3(0, 0, 0);
+    float T = 1.0f;
+
+    uint remaining = counts;
+    uint batchBase = baseOffset;
+
+    // Chunked loading and shading in batches of up to 1024 splats
+    while (remaining > 0)
     {
-        uint splatIdx = _SplatsKeys[baseOffset + i];
-        SplatTileData splat = _SplatTileDataReadOnly[splatIdx];
+        uint batchSize = min(remaining, 1024u);
 
-        // unpack SH-lit color
-        float3 rgb = float3(
-            f16tof32(splat.color.x >> 16),
-            f16tof32(splat.color.x & 0xFFFF),
-            f16tof32(splat.color.y >> 16)
-        );
+        // Load this batch into shared memory
+        for (uint i = flatIdx; i < batchSize; i += totalThreads)
+        {
+            uint splatIdx = _SplatsKeys[batchBase + i];
+            g_splatsShared[i] = _SplatTileDataReadOnly[splatIdx];
+        }
+        GroupMemoryBarrierWithGroupSync();
 
-        float2 d = splat.pos.xy - pixelCenter;
-        float power =
-              splat.conic.w
-            + splat.conic.x * d.x * d.x
-            + splat.conic.y * d.x * d.y
-            + splat.conic.z * d.y * d.y;
+        // Shade each splat in this batch
+        float2 pixelCenter = float2(px, py);
+        for (uint i = 0; i < batchSize; ++i)
+        {
+            SplatTileData splat = g_splatsShared[i];
+            // Unpack color
+            float3 rgb = float3(
+                f16tof32(splat.color.x >> 16),
+                f16tof32(splat.color.x & 0xFFFF),
+                f16tof32(splat.color.y >> 16)
+            );
+            // Compute Gaussian power
+            float2 d = splat.pos.xy - pixelCenter;
+            float power = splat.conic.w
+                        + splat.conic.x * d.x * d.x
+                        + splat.conic.y * d.x * d.y
+                        + splat.conic.z * d.y * d.y;
+            float alpha = exp2(power);
 
-        float alpha = exp2(power);
-        if (alpha < 1e-3) // alfa clipping
-            continue;
+            C += rgb * (alpha * T);
+            T -= alpha * T;
+        }
 
-        C += rgb * (alpha * T);
-        T -= alpha * T;
-        
-        if (T < 1e-3) // early out for when the pixel is at "full" transparency
-            break;
+        // Advance to next batch
+        remaining -= batchSize;
+        batchBase += batchSize;
+
+        // Barrier before reusing shared memory
+        GroupMemoryBarrierWithGroupSync();
     }
-
-    // flip Y and write out
-    uint flippedY = uint(screenH) - 1 - pixelCoord.y;
-    _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
+    
+    if (pixelOutsideTile)
+        return;
+    
+    // Write final color
+    uint flippedY = uint(screenH) - 1 - py;
+    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1);
 }
+
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;

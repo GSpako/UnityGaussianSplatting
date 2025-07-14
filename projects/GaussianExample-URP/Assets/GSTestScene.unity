@@ -723,10 +723,10 @@ MonoBehaviour:
   m_SortNthFrame: 1
   useTileSystem: 1
   gridSize: {x: 16, y: 16}
-  numTiles: 255
+  numTiles: 256
   useAdaptiveCulling: 0
-  RMin: 0
-  AlfaMin: 0
+  RMin: 0.363
+  AlfaMin: 0.818
   m_RenderMode: 0
   m_PointDisplaySize: 1
   m_Cutouts: []
