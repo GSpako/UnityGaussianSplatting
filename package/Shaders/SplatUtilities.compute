@@ -894,7 +894,7 @@ void CSRenderTileSplats(
 }
 
 StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
-groupshared SplatTileData g_splatsShared[1024];
+groupshared SplatTileData g_splatsShared[256];
 
 [numthreads(TILE_GROUP_SIZE, TILE_GROUP_SIZE, 1)]
 void CSRenderAllTileSplats(
@@ -946,7 +946,7 @@ void CSRenderAllTileSplats(
     // Chunked loading and shading in batches of up to 1024 splats
     while (remaining > 0)
     {
-        uint batchSize = min(remaining, 1024u);
+        uint batchSize = min(remaining, 256u);
 
         // Load this batch into shared memory
         for (uint i = flatIdx; i < batchSize; i += totalThreads)
