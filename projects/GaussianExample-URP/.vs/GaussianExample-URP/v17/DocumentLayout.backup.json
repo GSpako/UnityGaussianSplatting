@@ -43,7 +43,7 @@
               "RelativeDocumentMoniker": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatRenderer.cs",
               "RelativeToolTip": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
-              "ViewState": "AgIAAJEAAAAAAAAAAAAUwKEAAAAPAAAAAAAAAA==",
+              "ViewState": "AgIAAOkDAAAAAAAAAAAAwAsEAAA1AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-06-06T10:39:06.051Z",
               "EditorCaption": ""
@@ -56,7 +56,7 @@
               "RelativeDocumentMoniker": "..\\..\\package\\Shaders\\SplatUtilities.compute",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute",
               "RelativeToolTip": "..\\..\\package\\Shaders\\SplatUtilities.compute",
-              "ViewState": "AgIAAGMCAAAAAAAAAAAQwGACAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAFQCAAAAAAAAAAAAAPkBAAAaAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
               "WhenOpened": "2025-06-06T10:50:50.894Z",
               "EditorCaption": ""
@@ -69,10 +69,9 @@
               "RelativeDocumentMoniker": "..\\..\\package\\Shaders\\GaussianSplatting.hlsl",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl",
               "RelativeToolTip": "..\\..\\package\\Shaders\\GaussianSplatting.hlsl",
-              "ViewState": "AgIAADcCAAAAAAAAAAAAwE0CAAA0AAAAAAAAAA==",
+              "ViewState": "AgIAANcCAAAAAAAAAAAQwO0CAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
-              "WhenOpened": "2025-06-09T15:35:15.038Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-09T15:35:15.038Z"
             },
             {
               "$type": "Document",
@@ -108,8 +107,7 @@
               "RelativeToolTip": "..\\..\\package\\Runtime\\GaussianSplatURPFeature.cs",
               "ViewState": "AgIAAFcAAAAAAAAAAAAowF8AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-19T12:56:34.609Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-19T12:56:34.609Z"
             }
           ]
         }
