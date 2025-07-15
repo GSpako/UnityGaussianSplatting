@@ -1,6 +1,8 @@
 ﻿// SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
 #define TILE_GROUP_SIZE 8
+#define TILE_GROUP_SIZE_X 8
+#define TILE_GROUP_SIZE_Y 8
 #pragma enable_d3d11_debug_symbols
 
 #pragma kernel CSResetCounter
@@ -893,14 +895,16 @@ void CSRenderTileSplats(
     _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 
+
 StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
-//groupshared SplatTileData g_splatsShared[256];
- 
-[numthreads(TILE_GROUP_SIZE, TILE_GROUP_SIZE, 1)]
+groupshared SplatTileData g_splatsShared[256];
+
+[numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
 void CSRenderAllTileSplats(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
+
     uint tileIndex = groupId.z;
     if (tileIndex >= _NumTiles) 
         return;
@@ -909,8 +913,8 @@ void CSRenderAllTileSplats(
     uint tileY = tileIndex / _TileCountX;
 
     // compute pixel within full screen
-    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE + tid.x;
-    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE + tid.y;
+    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE_X + tid.x;
+    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE_Y + tid.y;
 
     // exact same “border‐check” as in CSRenderTileSplats:
     int x0 = tileX * _TileSize.x;
@@ -919,77 +923,78 @@ void CSRenderAllTileSplats(
     int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
     bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
 
-    // Precompute pixel center
-    float2 pixelCenter = float2(px, py);
-
-    // Compute prefix‑sum of splat counts to find baseOffset
+    // Compute splat count and base offset
     uint counts = _SplatTileCounter[tileIndex];
     uint baseOffset = 0;
-    
     for (uint t = 0; t < tileIndex; ++t)
-        baseOffset += _SplatTileCounter[_StartTile + t];
+        baseOffset += _SplatTileCounter[t];
+
+    // Flattened thread index for cooperative load
+    uint flatIdx = tid.y * TILE_GROUP_SIZE_X + tid.x;
+    uint totalThreads = TILE_GROUP_SIZE_X * TILE_GROUP_SIZE_Y;
 
     // Accumulators
     float3 C = float3(0, 0, 0);
     float T = 1.0f;
 
-    // Wave intrinsics helpers
-    uint lane = WaveGetLaneIndex();
-    bool isFirst = WaveIsFirstLane();
+    uint remaining = counts;
+    uint batchBase = baseOffset;
 
-    // Main splat loop
-    for (uint i = 0; i < counts; ++i)
+    // Chunked loading and shading in batches of up to 1024 splats
+    while (remaining > 0)
     {
-        // Fetch the key for this splat
-        uint splatKey = _SplatsKeys[baseOffset + i];
+        uint batchSize = min(remaining, 256u);
 
-        // Only lane 0 in each wave reads from global memory
-        SplatTileData leaderData;
-        if (isFirst)
+        // Load this batch into shared memory
+        for (uint i = flatIdx; i < batchSize; i += totalThreads)
         {
-            leaderData = _SplatTileDataReadOnly[splatKey];
+            uint splatIdx = _SplatsKeys[batchBase + i];
+            g_splatsShared[i] = _SplatTileDataReadOnly[splatIdx];
+        }
+        GroupMemoryBarrierWithGroupSync();
+
+        // Shade each splat in this batch
+        float2 pixelCenter = float2(px, py);
+        for (uint i = 0; i < batchSize; ++i)
+        {
+            SplatTileData splat = g_splatsShared[i];
+            // Unpack color
+            float3 rgb = float3(
+                f16tof32(splat.color.x >> 16),
+                f16tof32(splat.color.x & 0xFFFF),
+                f16tof32(splat.color.y >> 16)
+            );
+            // Compute Gaussian power
+            float2 d = splat.pos.xy - pixelCenter;
+            float power = splat.conic.w
+                        + splat.conic.x * d.x * d.x
+                        + splat.conic.y * d.x * d.y
+                        + splat.conic.z * d.y * d.y;
+            float alpha = exp2(power);
+
+            C += rgb * (alpha * T);
+            T -= alpha * T;
+            
+            //if (T < 1e-3)
+                //break;
         }
 
-        // Broadcast all fields from lane 0 to the wave
-        float2 pos;
-        pos = WaveReadLaneFirst(leaderData.pos);
+        // Advance to next batch
+        remaining -= batchSize;
+        batchBase += batchSize;
 
-        float4 conic;
-        conic = WaveReadLaneFirst(leaderData.conic);
-
-        uint2 colorBits;
-        colorBits = WaveReadLaneFirst(leaderData.color);
-
-        // Unpack FP16 color
-        float3 rgb;
-        rgb.x = f16tof32(colorBits.x >> 16);
-        rgb.y = f16tof32(colorBits.x & 0xFFFF);
-        rgb.z = f16tof32(colorBits.y >> 16);
-
-        // Compute Gaussian weight
-        float2 d = pos - pixelCenter;
-        float power = conic.w
-                     + conic.x * d.x * d.x
-                     + conic.y * d.x * d.y
-                     + conic.z * d.y * d.y;
-        float alpha = exp2(power);
-
-        // Front‑to‑back composite
-        C += rgb * (alpha * T);
-        T -= alpha * T;
-
-        // Early‑out if nearly opaque
-        if (T < 1e-3f && !isFirst)
-            break;
+        // Barrier before reusing shared memory
+        GroupMemoryBarrierWithGroupSync();
     }
-
+    
     if (pixelOutsideTile)
         return;
     
-    // Flip Y and write final color (no background here)
+    // Write final color
     uint flippedY = uint(_VecScreenParams.y) - 1 - py;
-    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1.0f);
+    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1);
 }
+
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;
