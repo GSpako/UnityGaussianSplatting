@@ -556,7 +556,7 @@ namespace GaussianSplatting.Runtime
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
         const int kGpuViewDataSize = 72;
-        const int kGpuTileDataSize = 32;
+        const int kGpuTileDataSize = 64;
 
         void CreateResourcesForAsset()
         {

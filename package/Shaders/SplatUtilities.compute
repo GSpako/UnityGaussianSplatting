@@ -608,8 +608,9 @@ void CSCalcViewDataAllTiled(uint3 dispatchId : SV_DispatchThreadID)
         float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorld;
         float3 objViewDir = normalize(mul((float3x3) _MatrixWorldToObject, worldViewDir));
         half4 col = half4(ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0), min(splat.opacity * _SplatOpacityScale, 65000));
-        tile.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
-        tile.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
+        tile.color.r = col.r;
+        tile.color.g = col.g;
+        tile.color.b = col.b;
 
         // --- now only write the conic + power if this splat actually spans tiles: ---
         tile.conic.x = (-0.5f * LOG2E) * conic.x;
@@ -896,105 +897,187 @@ void CSRenderTileSplats(
 }
 
 
-StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
-groupshared SplatTileData g_splatsShared[256];
+//StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
+//groupshared SplatTileData g_splatsShared[256];
+#define PIXELS_PER_THREAD_X 2
+#define PIXELS_PER_THREAD_Y 2
+#define THREADS_X 8
+#define THREADS_Y 4
+#define THREADS_PER_GROUP (THREADS_X * THREADS_Y)  // 32 = 1 warp
 
-[numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
-void CSRenderAllTileSplats(
-    uint3 tid : SV_GroupThreadID,
-    uint3 groupId : SV_GroupID)
+groupshared float2 g_xy[2];
+groupshared float3 g_rgb[2];
+groupshared float4 g_con_o[2]; // conic (xyz) and opacity (w)
+
+
+struct GaussianData
 {
+    float2 xy;
+    float3 rgb;
+    float4 con_o; // conic (xyz) and opacity (w)
+};
 
-    uint tileIndex = groupId.z;
-    if (tileIndex >= _NumTiles) 
+StructuredBuffer<SplatTileData> _SplatTileDataReadOnly;
+//StructuredBuffer<uint> _SplatTileCounter : register(t2); // Cumulative splat counts
+
+[numthreads(THREADS_X, THREADS_Y, 1)]
+void CSRenderAllTileSplats(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
+{
+    // Calculate tile index and pixel positions
+    uint tileIdx = gid.z;
+    if (tileIdx >= _NumTiles) 
         return;
-
-    uint tileX = tileIndex % _TileCountX;
-    uint tileY = tileIndex / _TileCountX;
-
-    // compute pixel within full screen
-    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE_X + tid.x;
-    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE_Y + tid.y;
-
-    // exact same “border‐check” as in CSRenderTileSplats:
-    int x0 = tileX * _TileSize.x;
-    int y0 = tileY * _TileSize.y;
-    int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
-    int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
-    bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
-
-    // Compute splat count and base offset
-    uint counts = _SplatTileCounter[tileIndex];
-    uint baseOffset = 0;
-    for (uint t = 0; t < tileIndex; ++t)
-        baseOffset += _SplatTileCounter[t];
-
-    // Flattened thread index for cooperative load
-    uint flatIdx = tid.y * TILE_GROUP_SIZE_X + tid.x;
-    uint totalThreads = TILE_GROUP_SIZE_X * TILE_GROUP_SIZE_Y;
-
-    // Accumulators
-    float3 C = float3(0, 0, 0);
-    float T = 1.0f;
-
-    uint remaining = counts;
-    uint batchBase = baseOffset;
-
-    // Chunked loading and shading in batches of up to 1024 splats
-    while (remaining > 0)
+    
+    uint tileX = tileIdx % _TileCountX;
+    uint tileY = tileIdx / _TileCountX;
+    
+    // Pixel positions for this thread (2x2 block)
+    uint2 basePx = uint2(
+        tileX * _TileSize.x + gid.x * THREADS_X * PIXELS_PER_THREAD_X,
+        tileY * _TileSize.y + gid.y * THREADS_Y * PIXELS_PER_THREAD_Y
+    );
+    
+    // Local pixel offsets
+    uint2 localPx[PIXELS_PER_THREAD_Y][PIXELS_PER_THREAD_X];
+    float2 pixelCenters[PIXELS_PER_THREAD_Y][PIXELS_PER_THREAD_X];
+    
+  //  [unroll]
+    for (uint py = 0; py < PIXELS_PER_THREAD_Y; py++)
     {
-        uint batchSize = min(remaining, 256u);
-
-        // Load this batch into shared memory
-        for (uint i = flatIdx; i < batchSize; i += totalThreads)
+       // [unroll]
+        for (uint px = 0; px < PIXELS_PER_THREAD_X; px++)
         {
-            uint splatIdx = _SplatsKeys[batchBase + i];
-            g_splatsShared[i] = _SplatTileDataReadOnly[splatIdx];
+            localPx[py][px] = uint2(
+                basePx.x + tid.x * PIXELS_PER_THREAD_X + px,
+                basePx.y + tid.y * PIXELS_PER_THREAD_Y + py
+            );
+            pixelCenters[py][px] = float2(localPx[py][px]) + 0.5f;
         }
+    }
+
+    // Initialize accumulators - CORRECTED DECLARATION
+    float3 C[PIXELS_PER_THREAD_Y][PIXELS_PER_THREAD_X];
+    float T[PIXELS_PER_THREAD_Y][PIXELS_PER_THREAD_X];
+    
+    // PROPER INITIALIZATION WITH LOOPS
+   // [unroll]
+    for (uint init_py = 0; init_py < PIXELS_PER_THREAD_Y; init_py++)
+    {
+      //  [unroll]
+        for (uint init_px = 0; init_px < PIXELS_PER_THREAD_X; init_px++)
+        {
+            C[init_py][init_px] = float3(0, 0, 0);
+            T[init_py][init_px] = 1.0f;
+        }
+    }
+
+    // Get splat range for this tile
+    uint2 range = uint2(0, 0);
+    range.x = 0;
+    range.y = _SplatTileCounter[tileIdx];
+
+    int splatCount = range.y;
+    
+    // Wave setup
+    uint laneIdx = WaveGetLaneIndex();
+
+    // Process splats in batches of 2
+    for (uint batchStart = 0; batchStart < splatCount; batchStart += 2)
+    {
+        // Warp-wide early termination check
+        bool terminate = true;
+       // [unroll]
+        for (uint term_py = 0; term_py < PIXELS_PER_THREAD_Y; term_py++)
+        {
+           // [unroll]
+            for (uint term_px = 0; term_px < PIXELS_PER_THREAD_X; term_px++)
+            {
+                terminate = terminate && (T[term_py][term_px] < 1e-3f);
+            }
+        }
+        if (WaveActiveAllTrue(terminate))
+            break;
+
+        // Cooperative loading of 2 Gaussians
+        if (laneIdx < 2)
+        {
+            uint splatIdx = range.x + batchStart + laneIdx;
+            if (splatIdx < range.y)
+            {
+                SplatTileData g = _SplatTileDataReadOnly[splatIdx];
+                g_xy[laneIdx] = g.pos.xy;
+                g_rgb[laneIdx] = g.color;
+                g_con_o[laneIdx] = g.conic;
+            }
+        }
+        
         GroupMemoryBarrierWithGroupSync();
 
-        // Shade each splat in this batch
-        float2 pixelCenter = float2(px, py);
-        for (uint i = 0; i < batchSize; ++i)
+        // Process both Gaussians
+       // [unroll]
+        for (uint i = 0; i < 2; i++)
         {
-            SplatTileData splat = g_splatsShared[i];
-            // Unpack color
-            float3 rgb = float3(
-                f16tof32(splat.color.x >> 16),
-                f16tof32(splat.color.x & 0xFFFF),
-                f16tof32(splat.color.y >> 16)
-            );
-            // Compute Gaussian power
-            float2 d = splat.pos.xy - pixelCenter;
-            float power = splat.conic.w
-                        + splat.conic.x * d.x * d.x
-                        + splat.conic.y * d.x * d.y
-                        + splat.conic.z * d.y * d.y;
-            float alpha = exp2(power);
-
-            C += rgb * (alpha * T);
-            T -= alpha * T;
+            if (batchStart + i >= splatCount)
+                continue;
             
-            //if (T < 1e-3)
-                //break;
+            float2 xy = g_xy[i];
+            float3 rgb = g_rgb[i];
+            float4 con_o = g_con_o[i];
+
+          //  [unroll]
+            for (uint proc_py = 0; proc_py < PIXELS_PER_THREAD_Y; proc_py++)
+            {
+              //  [unroll]
+                for (uint proc_px = 0; proc_px < PIXELS_PER_THREAD_X; proc_px++)
+                {
+                    if (T[proc_py][proc_px] > 1e-3f)
+                    {
+                        float2 d = pixelCenters[proc_py][proc_px] - xy;
+                        float power = con_o.w +
+                                    con_o.x * d.x * d.x +
+                                    con_o.z * d.y * d.y +
+                                    con_o.y * d.x * d.y;
+                        
+                        // Fast exp2 approximation
+                        float alpha = exp2(power);
+                        alpha = min(alpha, 0.99f); // Clamp to avoid NaN
+                        
+                        // Alpha compositing
+                        float3 contrib = rgb * (alpha * T[proc_py][proc_px]);
+                        C[proc_py][proc_px] += contrib;
+                        T[proc_py][proc_px] *= (1.0f - alpha);
+                    }
+                }
+            }
         }
-
-        // Advance to next batch
-        remaining -= batchSize;
-        batchBase += batchSize;
-
-        // Barrier before reusing shared memory
+        
         GroupMemoryBarrierWithGroupSync();
     }
-    
-    if (pixelOutsideTile)
-        return;
-    
-    // Write final color
-    uint flippedY = uint(_VecScreenParams.y) - 1 - py;
-    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1);
-}
 
+    // Write results to render target
+    //[unroll]
+    for (uint out_py = 0; out_py < PIXELS_PER_THREAD_Y; out_py++)
+    {
+       // [unroll]
+        for (uint out_px = 0; out_px < PIXELS_PER_THREAD_X; out_px++)
+        {
+            uint2 pxPos = localPx[out_py][out_px];
+            if (pxPos.x < _VecScreenParams.x && pxPos.y < _VecScreenParams.y)
+            {
+                // Blend with background if needed
+                if (T[out_py][out_px] > 1e-3f)
+                {
+                    C[out_py][out_px] += float3(0,0,0) * T[out_py][out_px];
+                }
+                
+                // Gamma correction and output
+                float3 color = pow(saturate(C[out_py][out_px]), 1.0f / 2.2f);
+                uint2 writePos = uint2(pxPos.x, _VecScreenParams.y - 1 - pxPos.y);
+                _GaussianSplatRT[writePos] = float4(color, 1.0f);
+            }
+        }
+    }
+}
 
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;

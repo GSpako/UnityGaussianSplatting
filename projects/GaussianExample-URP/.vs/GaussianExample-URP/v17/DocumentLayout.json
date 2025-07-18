@@ -3,16 +3,13 @@
   "WorkspaceRootPath": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\MedioCubo\\Synology\\Avion\\HeffMob2\\Assets\\Scripts\\Avion\\ObstacleGenerator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl||{8B382828-6202-11D1-8870-0000F87579D2}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{90C7452B-3332-8E8F-FB7B-E5C2C604402D}|GaussianSplatting.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\runtime\\gaussiansplatrenderer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{90C7452B-3332-8E8F-FB7B-E5C2C604402D}|GaussianSplatting.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\runtime\\gaussiansplaturpfeature.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
@@ -32,7 +29,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 216,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
@@ -40,58 +37,46 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "ObstacleGenerator.cs",
-              "DocumentMoniker": "D:\\MedioCubo\\Synology\\Avion\\HeffMob2\\Assets\\Scripts\\Avion\\ObstacleGenerator.cs",
-              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\MedioCubo\\Synology\\Avion\\HeffMob2\\Assets\\Scripts\\Avion\\ObstacleGenerator.cs",
-              "ToolTip": "D:\\MedioCubo\\Synology\\Avion\\HeffMob2\\Assets\\Scripts\\Avion\\ObstacleGenerator.cs",
-              "RelativeToolTip": "..\\..\\..\\..\\..\\MedioCubo\\Synology\\Avion\\HeffMob2\\Assets\\Scripts\\Avion\\ObstacleGenerator.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABoAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-07-15T10:58:04.324Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 1,
               "Title": "GaussianSplatRenderer.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatRenderer.cs",
               "RelativeDocumentMoniker": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatRenderer.cs",
               "RelativeToolTip": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
-              "ViewState": "AgIAAOkDAAAAAAAAAAAAwAsEAAA1AAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-06T10:39:06.051Z"
+              "WhenOpened": "2025-06-06T10:39:06.051Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 0,
               "Title": "SplatUtilities.compute",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute",
               "RelativeDocumentMoniker": "..\\..\\package\\Shaders\\SplatUtilities.compute",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute",
               "RelativeToolTip": "..\\..\\package\\Shaders\\SplatUtilities.compute",
-              "ViewState": "AgIAAGwDAAAAAAAAAAAlwH8DAAAYAAAAAAAAAA==",
+              "ViewState": "AgIAAAoEAAAAAAAAAAAcwLoDAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
               "WhenOpened": "2025-06-06T10:50:50.894Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "GaussianSplatting.hlsl",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl",
               "RelativeDocumentMoniker": "..\\..\\package\\Shaders\\GaussianSplatting.hlsl",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl",
               "RelativeToolTip": "..\\..\\package\\Shaders\\GaussianSplatting.hlsl",
-              "ViewState": "AgIAANoCAAAAAAAAAAAewO4CAAABAAAAAAAAAA==",
+              "ViewState": "AgIAANYCAAAAAAAAAAAawPECAAAKAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
               "WhenOpened": "2025-06-09T15:35:15.038Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 5,
               "Title": "GaussianSplatRendererEditor.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatRendererEditor.cs",
               "RelativeDocumentMoniker": "..\\..\\package\\Editor\\GaussianSplatRendererEditor.cs",
@@ -103,7 +88,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 4,
               "Title": "CustomPlyCreator.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\Assets\\Scripts\\CustomPlyCreator.cs",
               "RelativeDocumentMoniker": "Assets\\Scripts\\CustomPlyCreator.cs",
@@ -115,7 +100,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 3,
               "Title": "GaussianSplatURPFeature.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatURPFeature.cs",
               "RelativeDocumentMoniker": "..\\..\\package\\Runtime\\GaussianSplatURPFeature.cs",

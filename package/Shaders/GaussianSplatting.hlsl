@@ -751,7 +751,7 @@ struct SplatTileData
 {
     float2 pos; //8
     float4 conic; //12
-    uint2 color; // 4xFP16
+    float3 color; // 4xFP16
 };
 
 // If we are rendering into backbuffer directly (e.g. HDR off, no postprocessing),
