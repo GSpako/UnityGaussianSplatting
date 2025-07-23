@@ -31,6 +31,7 @@ struct v2f
 StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
+float _ReducedQuadSize;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -52,7 +53,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		uint idx = vtxID;
 		float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
-		quadPos *= 2;
+		quadPos *= _ReducedQuadSize;
 
 		o.pos = quadPos;
 
@@ -78,6 +79,16 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
+	/*
+	quadNorm = i.pos * (1/1.5);// * 0.5;
+    const float borderWidth = 0.02; // adjust thickness here
+    if (quadNorm.x >  1.0 - borderWidth || quadNorm.x < -1.0 + borderWidth ||
+        quadNorm.y >  1.0 - borderWidth || quadNorm.y < -1.0 + borderWidth)
+    {
+		return half4(1,1,1,1);  // solid white border
+    }
+	*/
+
 	float power = -dot(i.pos, i.pos);
 	half alpha = exp(power);
 	if (i.col.a >= 0)
@@ -88,9 +99,9 @@ half4 frag (v2f i) : SV_Target
 	{
 		// "selected" splat: magenta outline, increase opacity, magenta tint
 		half3 selectedColor = half3(1,0,1);
-		if (alpha > 7.0/255.0)
+		if (alpha > 40.0/255.0)
 		{
-			if (alpha < 10.0/255.0)
+			if (alpha < 50.0/255.0)
 			{
 				alpha = 1;
 				i.col.rgb = selectedColor;

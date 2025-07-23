@@ -378,7 +378,7 @@ namespace GaussianSplatting.Runtime
         [Tooltip("The threshold for the alpha culling")]
         public float AlfaMin = 1;
 
-       
+        public bool m_ReducedQuadSize = false;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
@@ -443,8 +443,9 @@ namespace GaussianSplatting.Runtime
             public static readonly int SplatPos = Shader.PropertyToID("_SplatPos");
             public static readonly int SplatOther = Shader.PropertyToID("_SplatOther");
             public static readonly int SplatSH = Shader.PropertyToID("_SplatSH");
-            public static readonly int SplatColor = Shader.PropertyToID("_SplatColor");
+            public static readonly int SplatColor = Shader.PropertyToID("_SplatColor"); 
             public static readonly int SplatSelectedBits = Shader.PropertyToID("_SplatSelectedBits");
+            public static readonly int ReducedQuadSize = Shader.PropertyToID("_ReducedQuadSize");
             public static readonly int SplatDeletedBits = Shader.PropertyToID("_SplatDeletedBits");
             public static readonly int SplatBitsValid = Shader.PropertyToID("_SplatBitsValid");
             public static readonly int SplatFormat = Shader.PropertyToID("_SplatFormat");
@@ -726,6 +727,8 @@ namespace GaussianSplatting.Runtime
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
             mat.SetInt(Props.SplatBitsValid, m_GpuEditSelected != null && m_GpuEditDeleted != null ? 1 : 0);
+            mat.SetFloat(Props.ReducedQuadSize, m_ReducedQuadSize ? 1.5f : 2f);
+
             uint format = (uint)m_Asset.posFormat | ((uint)m_Asset.scaleFormat << 8) | ((uint)m_Asset.shFormat << 16);
             mat.SetInteger(Props.SplatFormat, (int)format);
             mat.SetInteger(Props.SplatCount, m_SplatCount);

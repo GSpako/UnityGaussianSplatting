@@ -42,6 +42,7 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_UseAdaptiveCulling;
         SerializedProperty m_RMin;
         SerializedProperty m_AlfaMin;
+        SerializedProperty m_ReduceQuadSize;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -88,7 +89,7 @@ namespace GaussianSplatting.Editor
             m_UseAdaptiveCulling = serializedObject.FindProperty("useAdaptiveCulling");
             m_RMin = serializedObject.FindProperty("RMin");
             m_AlfaMin = serializedObject.FindProperty("AlfaMin");
-
+            m_ReduceQuadSize = serializedObject.FindProperty("m_ReducedQuadSize");
             s_AllEditors.Add(this);
         }
 
@@ -145,6 +146,8 @@ namespace GaussianSplatting.Editor
                 EditorGUILayout.PropertyField(m_RMin, new GUIContent("R Min"));
                 EditorGUILayout.PropertyField(m_AlfaMin, new GUIContent("Alfa Min"));
             }
+
+            EditorGUILayout.PropertyField(m_ReduceQuadSize, new GUIContent("Quad Reduccion"));
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
