@@ -125,8 +125,15 @@ namespace GaussianSplatting.Runtime
                         gs.currentLine = GaussianSplatRenderer.RenderLine.CulledTiled;
                     else 
                         gs.currentLine = GaussianSplatRenderer.RenderLine.Tiled;
-                    SortAndRenderSplatsAllTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
-                    //SortAndRenderSplatsTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
+                    
+                    if(gs.batchedTileSystem)
+                    {
+                        SortAndRenderSplatsTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
+                    }
+                    else
+                    {
+                        SortAndRenderSplatsAllTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
+                    }
                 }
                 else if (gs.useAdaptiveCulling)
                 {
@@ -379,6 +386,8 @@ namespace GaussianSplatting.Runtime
         public float AlfaMin = 1;
 
         public bool m_ReducedQuadSize = false;
+
+        public bool batchedTileSystem = false;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;

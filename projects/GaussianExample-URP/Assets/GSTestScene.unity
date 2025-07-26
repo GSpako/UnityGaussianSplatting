@@ -721,13 +721,13 @@ MonoBehaviour:
   m_SHOrder: 3
   m_SHOnly: 0
   m_SortNthFrame: 1
-  useTileSystem: 0
-  gridSize: {x: 16, y: 16}
+  useTileSystem: 1
+  gridSize: {x: 32, y: 32}
   numTiles: 256
   useAdaptiveCulling: 1
   RMin: 0
   AlfaMin: 0.15
-  m_ReducedQuadSize: 1
+  m_ReducedQuadSize: 0
   m_RenderMode: 0
   m_PointDisplaySize: 1
   m_Cutouts: []
@@ -736,8 +736,8 @@ MonoBehaviour:
   m_ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
   m_ShaderDebugBoxes: {fileID: 4800000, guid: 4006f2680fd7c8b4cbcb881454c782be, type: 3}
   m_CSSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}
-  currentLine: 1
-  previousLine: 1
+  currentLine: 3
+  previousLine: 3
 --- !u!4 &1609192435
 Transform:
   m_ObjectHideFlags: 0
