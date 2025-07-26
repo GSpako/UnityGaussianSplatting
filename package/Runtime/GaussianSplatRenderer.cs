@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -11,6 +12,7 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.UIElements;
 using UnityEngine.XR;
 using static GaussianSplatting.Runtime.GaussianSplatRenderer;
 
@@ -132,7 +134,24 @@ namespace GaussianSplatting.Runtime
                     }
                     else
                     {
-                        SortAndRenderSplatsAllTiles(gs, mpb, cam, cmb, gaussianRTid, ref matComposite);
+                        KernelIndices kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                        switch ((int)gs.m_TileRenderMode)
+                        {
+                            case 0: //normal
+                                kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                                break;
+                            case 1: //waves
+                                kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                                break;
+                            case 2: //batched
+                                kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                                break;
+                            case 3: //combined
+                                kernel = KernelIndices.RenderAllTileSplats;
+                                break;
+
+                        }
+                        SortAndRenderSplatsAllTiles(gs, mpb, cam, cmb, gaussianRTid, kernel, ref matComposite);
                     }
                 }
                 else if (gs.useAdaptiveCulling)
@@ -150,7 +169,7 @@ namespace GaussianSplatting.Runtime
             
         }
 
-        public void SortAndRenderSplatsAllTiles(GaussianSplatRenderer gs, MaterialPropertyBlock mpb, Camera cam, CommandBuffer cmb, RenderTargetIdentifier gaussianRTid, ref Material matComposite)
+        public void SortAndRenderSplatsAllTiles(GaussianSplatRenderer gs, MaterialPropertyBlock mpb, Camera cam, CommandBuffer cmb, RenderTargetIdentifier gaussianRTid, KernelIndices kernel, ref Material matComposite)
         {
             gs.EnsureMaterials();
             matComposite = gs.m_MatComposite;
@@ -166,7 +185,7 @@ namespace GaussianSplatting.Runtime
             gs.SortPoints(cmb, cam, matrix, false);
 
             cmb.BeginSample(s_ProfDraw);
-            gs.RenderAllTileSplats(cmb, cam, gaussianRTid);
+            gs.RenderAllTileSplats(cmb, cam, gaussianRTid, kernel);
             cmb.EndSample(s_ProfDraw);
         }
 
@@ -390,6 +409,9 @@ namespace GaussianSplatting.Runtime
         public bool batchedTileSystem = false;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
+
+        public TileRendering m_TileRenderMode = TileRendering.batched;
+
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
 
         public GaussianCutout[] m_Cutouts;
@@ -526,7 +548,16 @@ namespace GaussianSplatting.Runtime
         public GaussianSplatAsset asset => m_Asset;
         public int splatCount => m_SplatCount;
 
-        enum KernelIndices
+
+        public enum TileRendering
+        {
+            normal,
+            waves,
+            batched,
+            combined
+        }
+
+        public enum KernelIndices
         {
             ResetCounter,
             ResetTileCounter,
@@ -540,6 +571,7 @@ namespace GaussianSplatting.Runtime
             CollectTileSplats,
             RenderTileSplats,
             RenderAllTileSplats,
+            RenderAllTileSplatsGroupShared,
             InitVisibleBuffers,
             UpdateEditData,
             InitEditData,
@@ -566,7 +598,7 @@ namespace GaussianSplatting.Runtime
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
         const int kGpuViewDataSize = 72;
-        const int kGpuTileDataSize = 64;
+        const int kGpuTileDataSize = 32;
 
         void CreateResourcesForAsset()
         {
@@ -1101,10 +1133,11 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, numTiles);
         }
 
-        internal void RenderAllTileSplats(CommandBuffer cmb, Camera cam, RenderTargetIdentifier gaussianRTid)
+        internal void RenderAllTileSplats(CommandBuffer cmb, Camera cam, RenderTargetIdentifier gaussianRTid, KernelIndices kernelString)
         {
             ComputeShader cs = m_CSSplatUtilities;
-            int kernel = (int)KernelIndices.RenderAllTileSplats;
+
+            int kernel = (int)kernelString;
 
             int totalGridSize =(int) (gridSize.x * gridSize.y);
 

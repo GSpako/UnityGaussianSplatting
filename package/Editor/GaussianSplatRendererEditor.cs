@@ -41,8 +41,10 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_NumTiles;
         SerializedProperty m_UseAdaptiveCulling;
         SerializedProperty m_RMin;
-        SerializedProperty m_AlfaMin;
+        SerializedProperty m_AlfaMin; 
         SerializedProperty m_ReduceQuadSize;
+        SerializedProperty m_BatchedTileSystem; 
+        SerializedProperty m_TileRenderMode;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -76,6 +78,7 @@ namespace GaussianSplatting.Editor
             m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
             m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
             m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
+            m_TileRenderMode = serializedObject.FindProperty("m_TileRenderMode");
             m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
             m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
             m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
@@ -90,6 +93,7 @@ namespace GaussianSplatting.Editor
             m_RMin = serializedObject.FindProperty("RMin");
             m_AlfaMin = serializedObject.FindProperty("AlfaMin");
             m_ReduceQuadSize = serializedObject.FindProperty("m_ReducedQuadSize");
+            m_BatchedTileSystem = serializedObject.FindProperty("batchedTileSystem");
             s_AllEditors.Add(this);
         }
 
@@ -135,8 +139,16 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_UseTileSystem, new GUIContent("Use the tile System"));
             if (m_UseTileSystem.boolValue)
             {
+                EditorGUILayout.PropertyField(m_TileRenderMode);
+
                 EditorGUILayout.PropertyField(m_GridSize, new GUIContent("Grid size"));
-                EditorGUILayout.PropertyField(m_NumTiles, new GUIContent("Tiles Batch"));
+                EditorGUILayout.PropertyField(m_BatchedTileSystem, new GUIContent("batched"));
+                if (m_BatchedTileSystem.boolValue)
+                    EditorGUILayout.PropertyField(m_NumTiles, new GUIContent("Tiles Batch"));
+            }
+            else 
+            {
+                EditorGUILayout.PropertyField(m_ReduceQuadSize, new GUIContent("Quad Reduccion"));
             }
 
             // Culling
@@ -147,7 +159,6 @@ namespace GaussianSplatting.Editor
                 EditorGUILayout.PropertyField(m_AlfaMin, new GUIContent("Alfa Min"));
             }
 
-            EditorGUILayout.PropertyField(m_ReduceQuadSize, new GUIContent("Quad Reduccion"));
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
