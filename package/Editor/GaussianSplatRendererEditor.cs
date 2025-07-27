@@ -139,12 +139,13 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_UseTileSystem, new GUIContent("Use the tile System"));
             if (m_UseTileSystem.boolValue)
             {
-                EditorGUILayout.PropertyField(m_TileRenderMode);
-
                 EditorGUILayout.PropertyField(m_GridSize, new GUIContent("Grid size"));
+
                 EditorGUILayout.PropertyField(m_BatchedTileSystem, new GUIContent("batched"));
                 if (m_BatchedTileSystem.boolValue)
                     EditorGUILayout.PropertyField(m_NumTiles, new GUIContent("Tiles Batch"));
+                else 
+                    EditorGUILayout.PropertyField(m_TileRenderMode);
             }
             else 
             {

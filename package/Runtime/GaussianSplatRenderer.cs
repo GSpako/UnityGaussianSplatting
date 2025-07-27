@@ -141,13 +141,13 @@ namespace GaussianSplatting.Runtime
                                 kernel = KernelIndices.RenderAllTileSplatsBase;
                                 break;
                             case 1: //waves
-                                kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                                kernel = KernelIndices.RenderAllTileSplatsWave;
                                 break;
                             case 2: //batched
                                 kernel = KernelIndices.RenderAllTileSplatsGroupShared;
                                 break;
                             case 3: //combined
-                                kernel = KernelIndices.RenderAllTileSplats;
+                                kernel = KernelIndices.RenderAllTileSplatsCombined;
                                 break;
 
                         }
@@ -561,6 +561,7 @@ namespace GaussianSplatting.Runtime
         {
             ResetCounter,
             ResetTileCounter,
+            OffsetTileAdder,
             CopyCounterToDrawArgs,
             SetIndices,
             CalcDistances,
@@ -570,8 +571,9 @@ namespace GaussianSplatting.Runtime
             CalcViewDataTiled,
             CollectTileSplats,
             RenderTileSplats,
-            RenderAllTileSplats,
+            RenderAllTileSplatsCombined,
             RenderAllTileSplatsGroupShared,
+            RenderAllTileSplatsWave,
             RenderAllTileSplatsBase,
             InitVisibleBuffers,
             UpdateEditData,
@@ -1059,6 +1061,13 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetTileCounter, groups, 1, 1);
         }
 
+        internal void CalculateTileOffsets(CommandBuffer cmb)
+        {
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.OffsetTileAdder, Props.SplatTileCounter, m_GpuSplatTileCounter);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, (int)(gridSize.x * gridSize.y));
+            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.OffsetTileAdder, 1, 1, 1);
+        }
+
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix, bool calcDistances)
         {
             if (cam.cameraType == CameraType.Preview)
@@ -1090,7 +1099,6 @@ namespace GaussianSplatting.Runtime
             m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
         }
-
 
         internal void SortPointsTiled(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
         {
@@ -1136,6 +1144,9 @@ namespace GaussianSplatting.Runtime
 
         internal void RenderAllTileSplats(CommandBuffer cmb, Camera cam, RenderTargetIdentifier gaussianRTid, KernelIndices kernelString)
         {
+
+            CalculateTileOffsets(cmb);
+
             ComputeShader cs = m_CSSplatUtilities;
 
             int kernel = (int)kernelString;

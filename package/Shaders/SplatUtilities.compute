@@ -6,7 +6,8 @@
 #pragma enable_d3d11_debug_symbols
 
 #pragma kernel CSResetCounter
-#pragma kernel CSResetTileCounter
+#pragma kernel CSResetTileCounter 
+#pragma kernel CSOffsetTileAdder
 #pragma kernel CSCopyCounterToDrawArgs
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
@@ -16,8 +17,9 @@
 #pragma kernel CSCalcViewDataTiled 
 #pragma kernel CSCollectTileSplats  
 #pragma kernel CSRenderTileSplats  
-#pragma kernel CSRenderAllTileSplats
+#pragma kernel CSRenderAllTileSplatsCombined
 #pragma kernel CSRenderAllTileSplatsGroupShared
+#pragma kernel CSRenderAllTileSplatsWave
 #pragma kernel CSRenderAllTileSplatsBase
 #pragma kernel CSUpdateEditData
 #pragma kernel CSInitEditData
@@ -93,6 +95,16 @@ void CSResetTileCounter(uint3 id : SV_DispatchThreadID)
         return;
     
     _SplatTileCounter[idx] = 0;
+}
+
+[numthreads(1, 1, 1)]
+void CSOffsetTileAdder(uint3 id : SV_DispatchThreadID)
+{
+    int gridSize = _TotalTiles;
+    for (int i = 1; i < gridSize; i++)
+    {
+        _SplatTileCounter[i] += _SplatTileCounter[i-1];
+    }
 }
 
 // Copy counter value into draw args buffer
@@ -900,31 +912,24 @@ void CSRenderTileSplats(
 
 //StructuredBuffer<SplatTileData> _SplatTileDataReadOnly; //done
 //groupshared SplatTileData g_splatsShared[256];
-#define PIXELS_PER_THREAD_X 2
-#define PIXELS_PER_THREAD_Y 2
+#define PIXELS_PER_THREAD_X 4  
+#define PIXELS_PER_THREAD_Y 4
 #define THREADS_X 8
 #define THREADS_Y 4
 #define THREADS_PER_GROUP (THREADS_X * THREADS_Y)  // 32 = 1 warp
+#define PIXELS_PER_THREAD (PIXELS_PER_THREAD_X * PIXELS_PER_THREAD_Y)  // 32 = 1 warp
 
-groupshared float2 g_xy[2];
-groupshared float3 g_rgb[2];
-groupshared float4 g_con_o[2]; // conic (xyz) and opacity (w)
-
-
-struct GaussianData
-{
-    float2 xy;
-    float3 rgb;
-    float4 con_o; // conic (xyz) and opacity (w)
-};
+groupshared float2 g_xy[PIXELS_PER_THREAD];
+groupshared float3 g_rgb[PIXELS_PER_THREAD];
+groupshared float4 g_con_o[PIXELS_PER_THREAD]; // conic (xyz) and opacity (w)
 
 StructuredBuffer<SplatTileData> _SplatTileDataReadOnly;
 //StructuredBuffer<uint> _SplatTileCounter : register(t2); // Cumulative splat counts
 
-[numthreads(THREADS_X, THREADS_Y, 1)]
-void CSRenderAllTileSplats(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
+[numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
+void CSRenderAllTileSplatsCombined(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
-    /*
+    
     // Calculate tile index and pixel positions
     uint tileIdx = gid.z;
     if (tileIdx >= _NumTiles) 
@@ -1007,8 +1012,11 @@ void CSRenderAllTileSplats(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             if (splatIdx < range.y)
             {
                 SplatTileData g = _SplatTileDataReadOnly[splatIdx];
+                
+                float3 rgb = float3(f16tof32(g.color.x >> 16),f16tof32(g.color.x & 0xFFFF),f16tof32(g.color.y >> 16));
+                
                 g_xy[laneIdx] = g.pos.xy;
-                g_rgb[laneIdx] = g.color;
+                g_rgb[laneIdx] = rgb;
                 g_con_o[laneIdx] = g.conic;
             }
         }
@@ -1079,7 +1087,7 @@ void CSRenderAllTileSplats(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             }
         }
     }
-    */
+    
 }
 
 groupshared SplatTileData g_splatsShared[256];
@@ -1106,11 +1114,10 @@ void CSRenderAllTileSplatsGroupShared(
     int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
     int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
     bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
+    
     // Compute splat count and base offset
-    uint counts = _SplatTileCounter[tileIndex];
-    uint baseOffset = 0;
-    for (uint t = 0; t < tileIndex; ++t)
-        baseOffset += _SplatTileCounter[t];
+    uint baseOffset = (tileIndex == 0) ? 0u : _SplatTileCounter[tileIndex - 1];
+    uint counts = _SplatTileCounter[tileIndex] - baseOffset;
 
     // Flattened thread index for cooperative load
     uint flatIdx = tid.y * TILE_GROUP_SIZE_X + tid.x;
@@ -1183,6 +1190,98 @@ void CSRenderAllTileSplatsGroupShared(
 
 
 [numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
+void CSRenderAllTileSplatsWave(
+    uint3 tid : SV_GroupThreadID,
+    uint3 groupId : SV_GroupID)
+{
+    uint tileIndex = groupId.z;
+    if (tileIndex >= _NumTiles) 
+        return;
+
+    uint tileX = tileIndex % _TileCountX;
+    uint tileY = tileIndex / _TileCountX;
+
+    // compute pixel within full screen
+    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE + tid.x;
+    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE + tid.y;
+
+    // exact same “border‐check” as in CSRenderTileSplats:
+    int x0 = tileX * _TileSize.x;
+    int y0 = tileY * _TileSize.y;
+    int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
+    int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
+    bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
+
+    // Precompute pixel center
+    float2 pixelCenter = float2(px, py);
+
+    // Compute prefix‑sum of splat counts to find baseOffset
+    uint baseOffset = (tileIndex == 0) ? 0u : _SplatTileCounter[tileIndex - 1];
+    uint counts = _SplatTileCounter[tileIndex] - baseOffset;
+
+    // Accumulators
+    float3 C = float3(0, 0, 0);
+    float T = 1.0f;
+
+    // Wave intrinsics helpers
+    uint lane = WaveGetLaneIndex();
+    bool isFirst = WaveIsFirstLane();
+
+    // Main splat loop
+    for (uint i = 0; i < counts; ++i)
+    {
+        // Fetch the key for this splat
+        uint splatKey = _SplatsKeys[baseOffset + i];
+
+        // Only lane 0 in each wave reads from global memory
+        SplatTileData leaderData;
+        if (isFirst)
+        {
+            leaderData = _SplatTileDataReadOnly[splatKey];
+        }
+
+        // Broadcast all fields from lane 0 to the wave
+        float2 pos;
+        pos = WaveReadLaneFirst(leaderData.pos);
+
+        float4 conic;
+        conic = WaveReadLaneFirst(leaderData.conic);
+
+        uint2 colorBits;
+        colorBits = WaveReadLaneFirst(leaderData.color);
+
+        // Unpack FP16 color
+        float3 rgb;
+        rgb.x = f16tof32(colorBits.x >> 16);
+        rgb.y = f16tof32(colorBits.x & 0xFFFF);
+        rgb.z = f16tof32(colorBits.y >> 16);
+
+        // Compute Gaussian weight
+        float2 d = pos - pixelCenter;
+        float power = conic.w
+                     + conic.x * d.x * d.x
+                     + conic.y * d.x * d.y
+                     + conic.z * d.y * d.y;
+        float alpha = exp2(power);
+
+        // Front‑to‑back composite
+        C += rgb * (alpha * T);
+        T -= alpha * T;
+
+        // Early‑out if nearly opaque
+        //if (T < 1e-3f && !isFirst)
+            //break;
+    }
+
+    if (pixelOutsideTile)
+        return;
+    
+    // Flip Y and write final color (no background here)
+    uint flippedY = uint(_VecScreenParams.y) - 1 - py;
+    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1.0f);
+}
+
+[numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
 void CSRenderAllTileSplatsBase(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
@@ -1224,10 +1323,8 @@ void CSRenderAllTileSplatsBase(
     uint2 pixelCoord = uint2(px, py);
     float2 pixelCenter = float2(px, py);
 
-    uint counts = _SplatTileCounter[tileIndex];
-    uint baseOffset = 0;
-    for (uint t = 0; t < localTile; ++t)
-        baseOffset += _SplatTileCounter[_StartTile + t];
+    uint baseOffset = (tileIndex == 0) ? 0u : _SplatTileCounter[tileIndex - 1];
+    uint counts = _SplatTileCounter[tileIndex] - baseOffset;
     
     float3 C = 0;
     float T = 1.0;
