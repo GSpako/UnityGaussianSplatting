@@ -138,7 +138,7 @@ namespace GaussianSplatting.Runtime
                         switch ((int)gs.m_TileRenderMode)
                         {
                             case 0: //normal
-                                kernel = KernelIndices.RenderAllTileSplatsGroupShared;
+                                kernel = KernelIndices.RenderAllTileSplatsBase;
                                 break;
                             case 1: //waves
                                 kernel = KernelIndices.RenderAllTileSplatsGroupShared;
@@ -572,6 +572,7 @@ namespace GaussianSplatting.Runtime
             RenderTileSplats,
             RenderAllTileSplats,
             RenderAllTileSplatsGroupShared,
+            RenderAllTileSplatsBase,
             InitVisibleBuffers,
             UpdateEditData,
             InitEditData,

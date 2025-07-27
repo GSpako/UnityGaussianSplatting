@@ -730,6 +730,7 @@ MonoBehaviour:
   m_ReducedQuadSize: 0
   batchedTileSystem: 0
   m_RenderMode: 0
+  m_TileRenderMode: 0
   m_PointDisplaySize: 1
   m_Cutouts: []
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}

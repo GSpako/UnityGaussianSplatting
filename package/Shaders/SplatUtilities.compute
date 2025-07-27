@@ -18,6 +18,7 @@
 #pragma kernel CSRenderTileSplats  
 #pragma kernel CSRenderAllTileSplats
 #pragma kernel CSRenderAllTileSplatsGroupShared
+#pragma kernel CSRenderAllTileSplatsBase
 #pragma kernel CSUpdateEditData
 #pragma kernel CSInitEditData
 #pragma kernel CSClearBuffer
@@ -1158,8 +1159,9 @@ void CSRenderAllTileSplatsGroupShared(
             C += rgb * (alpha * T);
             T -= alpha * T;
             
-            //if (T < 1e-3)
-                //break;
+                    bool terminate = T < 1e-3;
+        if (WaveActiveAllTrue(terminate))
+            break;
         }
 
         // Advance to next batch
@@ -1177,6 +1179,92 @@ void CSRenderAllTileSplatsGroupShared(
     uint flippedY = uint(_VecScreenParams.y) - 1 - py;
     _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1);
 
+}
+
+
+[numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
+void CSRenderAllTileSplatsBase(
+    uint3 tid : SV_GroupThreadID,
+    uint3 groupId : SV_GroupID)
+{
+    uint localTile = groupId.z;
+    if (localTile >= _NumTiles)
+        return;
+
+    uint tileIndex = _StartTile + localTile;
+    uint tileX = tileIndex % _TileCountX;
+    uint tileY = tileIndex / _TileCountX;
+    
+    // compute screen/tile dims
+    int screenW = (int) _VecScreenParams.x;
+    int screenH = (int) _VecScreenParams.y;
+    int tileW = _TileSize.x;
+    int tileH = _TileSize.y;
+    
+    int cols = (int) _TileCountX;
+    //int tileW = (screenW + cols - 1) / cols;
+    int x0 = tileX * tileW;
+    int x1 = min(x0 + tileW, screenW);
+
+    int rows = (int) _TileCountY;
+    //int tileH = (screenH + rows - 1) / rows;
+    int y0 = tileY * tileH;
+    int y1 = min(y0 + tileH, screenH);
+
+    // global pixel coordinate
+    uint px = uint(x0) + groupId.x * TILE_GROUP_SIZE + tid.x;
+    uint py = uint(y0) + groupId.y * TILE_GROUP_SIZE + tid.y;
+
+    // clip out both the padding and any threads outside the tile’s true rectangle
+    if (px < uint(x0) || px >= uint(x1) ||
+        py < uint(y0) || py >= uint(y1))
+        return;
+
+    // now do your normal front-to-back composite for this pixel:
+    uint2 pixelCoord = uint2(px, py);
+    float2 pixelCenter = float2(px, py);
+
+    uint counts = _SplatTileCounter[tileIndex];
+    uint baseOffset = 0;
+    for (uint t = 0; t < localTile; ++t)
+        baseOffset += _SplatTileCounter[_StartTile + t];
+    
+    float3 C = 0;
+    float T = 1.0;
+    for (uint i = 0; i < counts; ++i)
+    {
+        uint splatIdx = _SplatsKeys[baseOffset + i];
+        SplatTileData splat = _SplatTileDataReadOnly[splatIdx];
+
+        // unpack SH-lit color
+        float3 rgb = float3(
+            f16tof32(splat.color.x >> 16),
+            f16tof32(splat.color.x & 0xFFFF),
+            f16tof32(splat.color.y >> 16)
+        );
+
+        float2 d = splat.pos.xy - pixelCenter;
+        float power =
+              splat.conic.w
+            + splat.conic.x * d.x * d.x
+            + splat.conic.y * d.x * d.y
+            + splat.conic.z * d.y * d.y;
+
+        float alpha = exp2(power);
+        if (alpha < 1e-3) // alfa clipping
+            continue;
+
+        C += rgb * (alpha * T);
+        T -= alpha * T;
+        
+        bool terminate = T < 1e-3;
+        if (WaveActiveAllTrue(terminate))
+            break;
+    }
+
+    // flip Y and write out
+    uint flippedY = uint(screenH) - 1 - pixelCoord.y;
+    _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 
 RWByteAddressBuffer _DstBuffer;
