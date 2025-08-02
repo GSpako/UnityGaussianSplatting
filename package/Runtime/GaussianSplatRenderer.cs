@@ -395,7 +395,6 @@ namespace GaussianSplatting.Runtime
         public Vector2 gridSize = Vector2.one;
         [Tooltip("Number of tiles per dispatch")]
         public int numTiles = 1;
-
         public bool useAdaptiveCulling = true;
         [Range(0, 1)]
         [Tooltip("The threshold for the radious culling")]
@@ -403,14 +402,12 @@ namespace GaussianSplatting.Runtime
         [Range(0, 1)]
         [Tooltip("The threshold for the alpha culling")]
         public float AlfaMin = 1;
-
         public bool m_ReducedQuadSize = false;
-
         public bool batchedTileSystem = false;
+        public TileRendering m_TileRenderMode = TileRendering.batched;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
 
-        public TileRendering m_TileRenderMode = TileRendering.batched;
 
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
 
@@ -497,7 +494,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int SHOrder = Shader.PropertyToID("_SHOrder");
             public static readonly int SHOnly = Shader.PropertyToID("_SHOnly");
             public static readonly int TileIndex = Shader.PropertyToID("_TileIndex");
-            public static readonly int TilesCountX = Shader.PropertyToID("_TileCountX");
+            public static readonly int TilesCountX = Shader.PropertyToID("_TileCountX"); 
             public static readonly int TilesCountY = Shader.PropertyToID("_TileCountY");
             public static readonly int NumTiles = Shader.PropertyToID("_NumTiles");
             public static readonly int StartTile = Shader.PropertyToID("_StartTile");
@@ -1114,6 +1111,7 @@ namespace GaussianSplatting.Runtime
 
         internal void RenderTileSplats(CommandBuffer cmb, Camera cam, int tileIndex, RenderTargetIdentifier gaussianRTid)
         {
+
             ComputeShader cs = m_CSSplatUtilities;
             int kernel = (int)KernelIndices.RenderTileSplats;
 
@@ -1169,14 +1167,27 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(cs, Props.NumTiles, totalGridSize);
             cmb.SetComputeIntParam(cs, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
             cmb.SetComputeIntParam(cs, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
+           
             cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector2(tileSize.x, tileSize.y));
             cmb.SetComputeVectorParam(cs, Props.VecScreenParams, new Vector4(screenW, screenH, 0, 0));
 
             cs.GetKernelThreadGroupSizes(kernel, out uint gsX, out uint gsY, out _);
-            int dispatchX = (tileSize.x + (int)gsX - 1) / (int)gsX;
-            int dispatchY = (tileSize.y + (int)gsY - 1) / (int)gsY;
+            int dispatchX, dispatchY, dispatchZ;
+            if ((int)KernelIndices.RenderAllTileSplatsCombined == kernel)
+            {
+                dispatchX = 1; //(screenW + 16 - 1) / 16;
+                dispatchY = 1; //(screenH + 16 - 1) / 16;
+                dispatchZ = totalGridSize;
+            }
+            else 
+            {
+                dispatchX = (tileSize.x + (int)gsX - 1) / (int)gsX;
+                dispatchY = (tileSize.y + (int)gsY - 1) / (int)gsY;
+                dispatchZ = totalGridSize;
+            }
+            
 
-            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, totalGridSize);
+            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, dispatchZ);
         }
 
         public void Update()
@@ -1217,11 +1228,13 @@ namespace GaussianSplatting.Runtime
             var camTr = mainCam.transform;
             var prevParent = camTr.parent;
             var cam = m_Asset.cameras[index];
+           
             camTr.parent = selfTr;
             camTr.localPosition = cam.pos;
             camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
             camTr.parent = prevParent;
             camTr.localScale = Vector3.one;
+
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(camTr);
 #endif
