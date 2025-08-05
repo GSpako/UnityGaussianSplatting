@@ -1,8 +1,8 @@
 ﻿// SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
-#define TILE_GROUP_SIZE 8
-#define TILE_GROUP_SIZE_X 8
-#define TILE_GROUP_SIZE_Y 8
+#define TILE_GROUP_SIZE 16
+#define TILE_GROUP_SIZE_X 16
+#define TILE_GROUP_SIZE_Y 16
 #pragma enable_d3d11_debug_symbols
 
 #pragma kernel CSResetCounter
@@ -579,7 +579,7 @@ void CSCalcViewDataAllTiled(uint3 dispatchId : SV_DispatchThreadID)
             InterlockedAdd(_SplatTileCounter[tileIndex], 1);
             
             _SplatsKeys[writeIdx] = idx;
-            _SplatsDistances[writeIdx] = (tileIndex & 0xFFF) << 22 | (FloatToSortableUint(abs(camSpace.z)) >> 10);
+            _SplatsDistances[writeIdx] = (tileIndex & 0xFFFF) << 16 | (FloatToSortableUint(abs(camSpace.z)) >> 16);
         }
     }
     else
@@ -607,7 +607,7 @@ void CSCalcViewDataAllTiled(uint3 dispatchId : SV_DispatchThreadID)
                     InterlockedAdd(_SplatTileCounter[tileIndex], 1);
                 
                     _SplatsKeys[writeIdx] = idx;
-                    _SplatsDistances[writeIdx] = (tileIndex & 0xFFF) << 22 | (FloatToSortableUint(abs(camSpace.z)) >> 10);
+                    _SplatsDistances[writeIdx] = (tileIndex & 0xFFFF) << 16 | (FloatToSortableUint(abs(camSpace.z)) >> 16);
                 }
             }
         }
@@ -909,14 +909,14 @@ void CSRenderTileSplats(
     _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 
-#define PIXELS_PER_THREAD_X 15
-#define PIXELS_PER_THREAD_Y 17
+#define PIXELS_PER_THREAD_X 4
+#define PIXELS_PER_THREAD_Y 8
 
 #define THREADS_X 8
 #define THREADS_Y 4
 //#define PIXELS_PER_THREAD (PIXELS_PER_THREAD_X * PIXELS_PER_THREAD_Y)  // 32 = 1 warp
 
-#define COMBINED_BATCH_SIZE 64
+#define COMBINED_BATCH_SIZE 2
 
 groupshared float2 g_xy[COMBINED_BATCH_SIZE];
 groupshared float3 g_rgb[COMBINED_BATCH_SIZE];
@@ -924,14 +924,16 @@ groupshared float4 g_con_o[COMBINED_BATCH_SIZE];
 
 StructuredBuffer<SplatTileData> _SplatTileDataReadOnly;
 
-[numthreads(8, 4, 1)]
+[numthreads(THREADS_X, THREADS_Y, 1)]
 void CSRenderAllTileSplatsCombined(uint3 tid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
-    uint tileIdx = gid.z; 
+    uint tileX = gid.x;
+    uint tileY = gid.y;
     
-    uint tileX = tileIdx % _TileCountX;
-    uint tileY = tileIdx / _TileCountX;
-    
+    uint tileIdx = gid.y * _TileCountX + gid.x;
+    if (tileIdx >= _NumTiles) 
+        return;
+
     // Corrected base pixel calculation
     uint2 basePx = uint2(tileX, tileY) * _TileSize.xy;
     
@@ -1058,7 +1060,7 @@ void CSRenderAllTileSplatsCombined(uint3 tid : SV_GroupThreadID, uint3 gid : SV_
     
 }
 
-#define GROUP_SHARED_BATCHED 256
+#define GROUP_SHARED_BATCHED TILE_GROUP_SIZE_X * TILE_GROUP_SIZE_Y
 
 groupshared SplatTileData g_splatsShared[GROUP_SHARED_BATCHED];
 
@@ -1067,20 +1069,22 @@ void CSRenderAllTileSplatsGroupShared(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
-    uint tileIndex = groupId.z;
+    
+    uint tileX = groupId.x;
+    uint tileY = groupId.y;
+    
+    uint tileIndex = groupId.y * _TileCountX  + groupId.x;
     if (tileIndex >= _NumTiles) 
         return;
 
-    uint tileX = tileIndex % _TileCountX;
-    uint tileY = tileIndex / _TileCountX;
-
-    // compute pixel within full screen
-    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE_X + tid.x;
-    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE_Y + tid.y;
-
-    // exact same “border‐check” as in CSRenderTileSplats:
     int x0 = tileX * _TileSize.x;
     int y0 = tileY * _TileSize.y;
+    
+    // compute pixel within full screen
+    uint px = x0 + tid.x;
+    uint py = y0 + tid.y;
+
+    // exact same “border‐check” as in CSRenderTileSplats:
     int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
     int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
     bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
@@ -1103,13 +1107,16 @@ void CSRenderAllTileSplatsGroupShared(
     while (remaining > 0)
     {
         uint batchSize = min(remaining, GROUP_SHARED_BATCHED);
-
+        /*
         // Load this batch into shared memory
         for (uint i = flatIdx; i < batchSize; i += totalThreads)
         {
-            uint splatIdx = _SplatsKeys[batchBase + i];
-            g_splatsShared[i] = _SplatTileDataReadOnly[splatIdx];
+            uint splatIdx = _SplatsKeys[batchBase + flatIdx];
+            g_splatsShared[flatIdx] = _SplatTileDataReadOnly[splatIdx];
         }
+        */
+        uint splatIdx = _SplatsKeys[batchBase + flatIdx];
+        g_splatsShared[flatIdx] = _SplatTileDataReadOnly[splatIdx];
         GroupMemoryBarrierWithGroupSync();
 
         // Shade each splat in this batch
@@ -1166,20 +1173,21 @@ void CSRenderAllTileSplatsWave(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
-    uint tileIndex = groupId.z;
-    if (tileIndex >= _NumTiles) 
+    uint tileX = groupId.x;
+    uint tileY = groupId.y;
+    
+    uint tileIndex = tileY * _TileCountX + tileX;
+    if (tileIndex >= _NumTiles)  
         return;
-
-    uint tileX = tileIndex % _TileCountX;
-    uint tileY = tileIndex / _TileCountX;
-
-    // compute pixel within full screen
-    uint px = tileX * _TileSize.x + groupId.x * TILE_GROUP_SIZE + tid.x;
-    uint py = tileY * _TileSize.y + groupId.y * TILE_GROUP_SIZE + tid.y;
-
-    // exact same “border‐check” as in CSRenderTileSplats:
+    
     int x0 = tileX * _TileSize.x;
     int y0 = tileY * _TileSize.y;
+    
+    //// compute pixel within full screen
+    uint px = x0 + tid.x;
+    uint py = y0 + tid.y;
+
+    //// exact same “border‐check” as in CSRenderTileSplats:
     int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
     int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
     bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
@@ -1241,8 +1249,8 @@ void CSRenderAllTileSplatsWave(
         T -= alpha * T;
 
         // Early‑out if nearly opaque
-        //if (T < 1e-3f && !isFirst)
-            //break;
+        if (T < 1e-3f && !isFirst)
+            break;
     }
 
     if (pixelOutsideTile)
@@ -1258,39 +1266,26 @@ void CSRenderAllTileSplatsBase(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
-    uint localTile = groupId.z;
-    if (localTile >= _NumTiles)
-        return;
-
-    uint tileIndex = _StartTile + localTile;
-    uint tileX = tileIndex % _TileCountX;
-    uint tileY = tileIndex / _TileCountX;
+    uint tileX = groupId.x;
+    uint tileY = groupId.y;
     
-    // compute screen/tile dims
-    int screenW = (int) _VecScreenParams.x;
-    int screenH = (int) _VecScreenParams.y;
-    int tileW = _TileSize.x;
-    int tileH = _TileSize.y;
-    
-    int cols = (int) _TileCountX;
-    //int tileW = (screenW + cols - 1) / cols;
-    int x0 = tileX * tileW;
-    int x1 = min(x0 + tileW, screenW);
-
-    int rows = (int) _TileCountY;
-    //int tileH = (screenH + rows - 1) / rows;
-    int y0 = tileY * tileH;
-    int y1 = min(y0 + tileH, screenH);
-
-    // global pixel coordinate
-    uint px = uint(x0) + groupId.x * TILE_GROUP_SIZE + tid.x;
-    uint py = uint(y0) + groupId.y * TILE_GROUP_SIZE + tid.y;
-
-    // clip out both the padding and any threads outside the tile’s true rectangle
-    if (px < uint(x0) || px >= uint(x1) ||
-        py < uint(y0) || py >= uint(y1))
+    uint tileIndex = tileY * _TileCountX + tileX;
+    if (tileIndex >= _NumTiles)  
         return;
+    
+    int x0 = tileX * _TileSize.x;
+    int y0 = tileY * _TileSize.y;
+    
+    //// compute pixel within full screen
+    uint px = x0 + tid.x;
+    uint py = y0 + tid.y;
 
+    //// exact same “border‐check” as in CSRenderTileSplats:
+    int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
+    int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
+    if(px < x0 || px >= x1 || py < y0 || py >= y1)
+        return;
+    
     // now do your normal front-to-back composite for this pixel:
     uint2 pixelCoord = uint2(px, py);
     float2 pixelCenter = float2(px, py);
@@ -1320,19 +1315,19 @@ void CSRenderAllTileSplatsBase(
             + splat.conic.z * d.y * d.y;
 
         float alpha = exp2(power);
-        if (alpha < 1e-3) // alfa clipping
-            continue;
+        //if (alpha < 1e-3) // alfa clipping
+           // continue;
 
         C += rgb * (alpha * T);
         T -= alpha * T;
         
-        bool terminate = T < 1e-3;
-        if (WaveActiveAllTrue(terminate))
-            break;
+        //bool terminate = T < 1e-3;
+       // if (WaveActiveAllTrue(terminate))
+          //  break;
     }
 
     // flip Y and write out
-    uint flippedY = uint(screenH) - 1 - pixelCoord.y;
+    uint flippedY = _VecScreenParams.y - 1 - pixelCoord.y;
     _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 

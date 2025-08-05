@@ -175,7 +175,7 @@ namespace GaussianSplatting.Runtime
             matComposite = gs.m_MatComposite;
 
             gs.ResetCounter(cmb);
-            gs.ResetTileCounter(cmb);
+            gs.ResetTileCounter(cmb, cam);
 
             cmb.BeginSample(s_ProfCalcView);
             gs.CalcAllViewDataTiled(cmb, cam);
@@ -198,7 +198,7 @@ namespace GaussianSplatting.Runtime
             gs.CalcViewDataTiled(cmb, cam);
             cmb.EndSample(s_ProfCalcView);
 
-            gs.ResetTileCounter(cmb);
+            gs.ResetTileCounter(cmb, cam);
 
             int totalTiles = (int) (gs.gridSize.x * gs.gridSize.y);
             for (int i = 0; i < totalTiles; i += gs.numTiles)
@@ -648,8 +648,9 @@ namespace GaussianSplatting.Runtime
                 1, 5, 3, 5, 7, 3,
                 0, 4, 1, 4, 5, 1,
                 2, 3, 6, 3, 7, 6
-            });
+            }); 
 
+            var cam = Camera.main;
             m_DrawArgs = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 5, sizeof(uint))
             { name = "DrawArguments"};
             m_DrawArgs.SetData(new uint[] { 6, (uint)m_Asset.splatCount, 0, 0, 0 });
@@ -660,7 +661,7 @@ namespace GaussianSplatting.Runtime
             { name = "GaussianSplatCounter" };
             m_GpuSplatTileCounter = new GraphicsBuffer(GraphicsBuffer.Target.Counter |
                                     GraphicsBuffer.Target.Structured,
-                                    (int)(gridSize.x * gridSize.y), sizeof(uint))
+                                    (int)( Mathf.Ceil(cam.pixelWidth / gridSize.x) * Mathf.Ceil(cam.pixelHeight / gridSize.y) ), sizeof(uint))
             { name = "GaussianSplatTileCounter" };
 
             m_GpuSplatCounter.SetData(new uint[] { (uint)splatCount });
@@ -932,7 +933,7 @@ namespace GaussianSplatting.Runtime
             int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
             Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
             Vector4 camPos = cam.transform.position;
-            Vector2Int tileSize = new Vector2Int(
+            Vector2Int gridNum = new Vector2Int(
                Mathf.CeilToInt(screenW / gridSize.x),
                Mathf.CeilToInt(screenH / gridSize.y)
             );
@@ -951,12 +952,10 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
 
-            //cmb.SetComputeIntParam(m_CSSplatUtilities, Props.StartTile, 0);
-            //cmb.SetComputeIntParam(m_CSSplatUtilities, Props.NumTiles, gridSize.x );
-            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
-            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountX, Mathf.FloorToInt(gridNum.x));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TilesCountY, Mathf.FloorToInt(gridNum.y));
 
-            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.TileSize, new Vector2(tileSize.x, tileSize.y));
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.TileSize, new Vector2(gridSize.x, gridSize.y));
 
             //
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewDataAllTiled, Props.SplatKeys, m_GpuSortKeys);
@@ -1047,21 +1046,21 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetCounter, 1, 1, 1);
         }
 
-        internal void ResetTileCounter(CommandBuffer cmb)
+        internal void ResetTileCounter(CommandBuffer cmb, Camera cam)
         {
+            int totalTiles = (int)(Mathf.Ceil(cam.pixelWidth / gridSize.x) * Mathf.Ceil(cam.pixelHeight / gridSize.y));
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ResetTileCounter, Props.SplatTileCounter, m_GpuSplatTileCounter);
-            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, (int)(gridSize.x*gridSize.y));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, totalTiles);
 
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ResetTileCounter, out uint gsX, out _, out _);
-            int totalTiles = Mathf.FloorToInt(gridSize.x * gridSize.y);
             int groups = (totalTiles + (int)gsX - 1) / (int)gsX;
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ResetTileCounter, groups, 1, 1);
         }
 
-        internal void CalculateTileOffsets(CommandBuffer cmb)
+        internal void CalculateTileOffsets(CommandBuffer cmb, int totalTiles)
         {
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.OffsetTileAdder, Props.SplatTileCounter, m_GpuSplatTileCounter);
-            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, (int)(gridSize.x * gridSize.y));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.TotalTiles, (int)totalTiles);
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.OffsetTileAdder, 1, 1, 1);
         }
 
@@ -1143,51 +1142,33 @@ namespace GaussianSplatting.Runtime
         internal void RenderAllTileSplats(CommandBuffer cmb, Camera cam, RenderTargetIdentifier gaussianRTid, KernelIndices kernelString)
         {
 
-            CalculateTileOffsets(cmb);
-
             ComputeShader cs = m_CSSplatUtilities;
 
             int kernel = (int)kernelString;
-
-            int totalGridSize =(int) (gridSize.x * gridSize.y);
-
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
-            Vector2Int tileSize = new Vector2Int(
+            Vector2Int gridNum = new Vector2Int(
                 Mathf.CeilToInt(screenW / gridSize.x),
                 Mathf.CeilToInt(screenH / gridSize.y)
             );
+            int totalGridSize =(int) (gridNum.x * gridNum.y);
 
-            cmb.SetComputeBufferParam(cs, kernel, Props.SplatTileDataRO, m_GpuTile);
-            cmb.SetComputeBufferParam(cs, kernel, Props.SplatKeys, m_GpuSortKeys);
-            cmb.SetComputeBufferParam(cs, kernel, Props.SplatCounterRO, m_GpuSplatCounter);
-            cmb.SetComputeBufferParam(cs, kernel, Props.SplatTileCounter, m_GpuSplatTileCounter);
-            cmb.SetComputeTextureParam(cs, kernel, Props.GaussianSplatRT, gaussianRTid);
+            CalculateTileOffsets(cmb, totalGridSize);
 
-            cmb.SetComputeIntParam(cs, Props.StartTile, 0);
-            cmb.SetComputeIntParam(cs, Props.NumTiles, totalGridSize);
-            cmb.SetComputeIntParam(cs, Props.TilesCountX, Mathf.FloorToInt(gridSize.x));
-            cmb.SetComputeIntParam(cs, Props.TilesCountY, Mathf.FloorToInt(gridSize.y));
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatTileDataRO, m_GpuTile); 
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatKeys, m_GpuSortKeys); 
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatCounterRO, m_GpuSplatCounter); 
+            cmb.SetComputeBufferParam(cs, kernel, Props.SplatTileCounter, m_GpuSplatTileCounter); 
+            cmb.SetComputeTextureParam(cs, kernel, Props.GaussianSplatRT, gaussianRTid); 
+
+            cmb.SetComputeIntParam(cs, Props.StartTile, 0); 
+            cmb.SetComputeIntParam(cs, Props.NumTiles, totalGridSize); 
+            cmb.SetComputeIntParam(cs, Props.TilesCountX, Mathf.FloorToInt(gridNum.x)); 
+            cmb.SetComputeIntParam(cs, Props.TilesCountY, Mathf.FloorToInt(gridNum.y)); 
            
-            cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector2(tileSize.x, tileSize.y));
-            cmb.SetComputeVectorParam(cs, Props.VecScreenParams, new Vector4(screenW, screenH, 0, 0));
+            cmb.SetComputeVectorParam(cs, Props.TileSize, new Vector2(gridSize.x, gridSize.y)); 
+            cmb.SetComputeVectorParam(cs, Props.VecScreenParams, new Vector4(screenW, screenH, 0, 0)); 
 
-            cs.GetKernelThreadGroupSizes(kernel, out uint gsX, out uint gsY, out _);
-            int dispatchX, dispatchY, dispatchZ;
-            if ((int)KernelIndices.RenderAllTileSplatsCombined == kernel)
-            {
-                dispatchX = 1; //(screenW + 16 - 1) / 16;
-                dispatchY = 1; //(screenH + 16 - 1) / 16;
-                dispatchZ = totalGridSize;
-            }
-            else 
-            {
-                dispatchX = (tileSize.x + (int)gsX - 1) / (int)gsX;
-                dispatchY = (tileSize.y + (int)gsY - 1) / (int)gsY;
-                dispatchZ = totalGridSize;
-            }
-            
-
-            cmb.DispatchCompute(cs, kernel, dispatchX, dispatchY, dispatchZ);
+            cmb.DispatchCompute(cs, kernel, gridNum.x, gridNum.y, 1);
         }
 
         public void Update()
