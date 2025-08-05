@@ -569,6 +569,7 @@ MonoBehaviour:
   incrementTileBatchSize: 2
   Resolutions:
   - {x: 1920, y: 1080}
+  - {x: 3840, y: 2160}
   gridSizes:
   - {x: 16, y: 16}
 --- !u!4 &2045394582
