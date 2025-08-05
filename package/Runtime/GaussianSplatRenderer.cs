@@ -1216,7 +1216,7 @@ namespace GaussianSplatting.Runtime
             previousLine = currentLine;
         }
 
-        public void ActivateCamera(int index)
+        public void ActivateCamera(int index, int fov = 0)
         {
             Camera mainCam = Camera.main;
             if (!mainCam)
@@ -1234,6 +1234,8 @@ namespace GaussianSplatting.Runtime
             camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
             camTr.parent = prevParent;
             camTr.localScale = Vector3.one;
+            if (fov != 0) 
+                mainCam.fieldOfView = fov;
 
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(camTr);

@@ -372,7 +372,7 @@ Camera:
     height: 1
   near clip plane: 0.3
   far clip plane: 1000
-  field of view: 36
+  field of view: 50
   orthographic: 0
   orthographic size: 5
   m_Depth: -1
@@ -398,8 +398,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1462254335}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.034726076, y: 0.87339664, z: -0.47860903, w: 0.0831018}
-  m_LocalPosition: {x: 0.28295845, y: 1.4358618, z: 2.9221354}
+  m_LocalRotation: {x: -0.21102577, y: 0.31665364, z: 0.08146459, w: -0.92117435}
+  m_LocalPosition: {x: 3.3989623, y: 0.5576197, z: -2.3328931}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -478,7 +478,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Asset: {fileID: 11400000, guid: 4e413f6657925714f8eda3b3093c4b08, type: 2}
+  m_Asset: {fileID: 11400000, guid: 6aaaa3d89ef1db341a01bd82ff6629df, type: 2}
   m_RenderOrder: 0
   m_SplatScale: 1
   m_OpacityScale: 1
@@ -486,14 +486,14 @@ MonoBehaviour:
   m_SHOnly: 0
   m_SortNthFrame: 1
   useTileSystem: 1
-  gridSize: {x: 32, y: 32}
-  numTiles: 1024
-  useAdaptiveCulling: 0
-  RMin: 0.59
-  AlfaMin: 0.774
+  gridSize: {x: 16, y: 16}
+  numTiles: 256
+  useAdaptiveCulling: 1
+  RMin: 0
+  AlfaMin: 0
   m_ReducedQuadSize: 0
   batchedTileSystem: 0
-  m_TileRenderMode: 2
+  m_TileRenderMode: 3
   m_RenderMode: 0
   m_PointDisplaySize: 1
   m_Cutouts: []
@@ -502,8 +502,8 @@ MonoBehaviour:
   m_ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
   m_ShaderDebugBoxes: {fileID: 4800000, guid: 4006f2680fd7c8b4cbcb881454c782be, type: 3}
   m_CSSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}
-  currentLine: 2
-  previousLine: 2
+  currentLine: 3
+  previousLine: 3
 --- !u!4 &1609192435
 Transform:
   m_ObjectHideFlags: 0
@@ -549,11 +549,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Assets:
-  - {fileID: 11400000, guid: ed8eb10b9ed91ad41b7317f97b32c4f1, type: 2}
-  - {fileID: 11400000, guid: efc9e8cadb1c0fa428994bde3d65901e, type: 2}
+  - {fileID: 11400000, guid: d9dbcc9c25b7cad459053db758d51767, type: 2}
+  - {fileID: 11400000, guid: 0190e461ca5756a439f2eb179daa7094, type: 2}
+  - {fileID: 11400000, guid: 6aaaa3d89ef1db341a01bd82ff6629df, type: 2}
+  - {fileID: 11400000, guid: 1730c03b6c02705459937e2100d33cdb, type: 2}
+  Fovs: 24000000240000003200000032000000
   rend: {fileID: 1609192434}
   resultsFileExtension: .csv
-  delayBeforeRecord: 0.1
+  delayBeforeRecord: 1
   delayAfterAssetSwap: 6
   startAlfa: 0
   endAlfa: 0.5
@@ -564,6 +567,12 @@ MonoBehaviour:
   startTileBatchSize: 32
   endTileBatchSize: 256
   incrementTileBatchSize: 2
+  Resolutions:
+  - {x: 1920, y: 1080}
+  - {x: 3840, y: 2160}
+  gridSizes:
+  - {x: 16, y: 16}
+  - {x: 32, y: 32}
 --- !u!4 &2045394582
 Transform:
   m_ObjectHideFlags: 0

@@ -49,7 +49,7 @@ namespace GaussianSplatting.Editor
             var items = new RefItem[]
             {
                 new() {assetPath = "truck", cameraIndex = 30, fov = 50},
-                new() {assetPath = "bonsai", cameraIndex = 30, fov = 50},
+                //new() {assetPath = "bonsai", cameraIndex = 30, fov = 50},
             };
 
             var cam = Camera.main;
