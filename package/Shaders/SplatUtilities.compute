@@ -584,7 +584,7 @@ void CSCalcViewDataAllTiled(uint3 dispatchId : SV_DispatchThreadID)
     }
     else
     {
-        // Multi‐tile loop
+        // Multi‐tile loop 
         for (int ty = rectMin.y; ty < rectMax.y; ++ty)
         {
             for (int tx = rectMin.x; tx < rectMax.x; ++tx)
@@ -909,8 +909,8 @@ void CSRenderTileSplats(
     _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 
-#define PIXELS_PER_THREAD_X 4
-#define PIXELS_PER_THREAD_Y 8
+#define PIXELS_PER_THREAD_X 2
+#define PIXELS_PER_THREAD_Y 4
 
 #define THREADS_X 8
 #define THREADS_Y 4

@@ -666,7 +666,7 @@ namespace GaussianSplatting.Runtime
 
             m_GpuSplatCounter.SetData(new uint[] { (uint)splatCount });
 
-            InitSortBuffers(splatCount);
+            InitSortBuffers(splatCount*3);
         }
 
         void InitSortBuffers(int count)
