@@ -486,7 +486,7 @@ MonoBehaviour:
   m_SHOnly: 0
   m_SortNthFrame: 1
   useTileSystem: 1
-  gridSize: {x: 16, y: 16}
+  gridSize: {x: 32, y: 32}
   numTiles: 256
   useAdaptiveCulling: 1
   RMin: 0
@@ -571,7 +571,7 @@ MonoBehaviour:
   - {x: 1920, y: 1080}
   - {x: 3840, y: 2160}
   gridSizes:
-  - {x: 16, y: 16}
+  - {x: 32, y: 32}
 --- !u!4 &2045394582
 Transform:
   m_ObjectHideFlags: 0

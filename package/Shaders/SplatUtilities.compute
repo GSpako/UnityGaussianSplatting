@@ -1,8 +1,8 @@
 ﻿// SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
 #define TILE_GROUP_SIZE 16
-#define TILE_GROUP_SIZE_X 16
-#define TILE_GROUP_SIZE_Y 16
+#define TILE_GROUP_SIZE_X 32
+#define TILE_GROUP_SIZE_Y 32
 #pragma enable_d3d11_debug_symbols
 
 #pragma kernel CSResetCounter
@@ -909,8 +909,8 @@ void CSRenderTileSplats(
     _GaussianSplatRT[uint2(pixelCoord.x, flippedY)] = float4(C + T * 0 /* bg */, 1);
 }
 
-#define PIXELS_PER_THREAD_X 2
-#define PIXELS_PER_THREAD_Y 4
+#define PIXELS_PER_THREAD_X 4
+#define PIXELS_PER_THREAD_Y 8
 
 #define THREADS_X 8
 #define THREADS_Y 4
