@@ -241,6 +241,10 @@ namespace GaussianSplatting.Runtime
         {
             public Vector3 pos;
             public Vector3 axisX, axisY, axisZ;
+            public float fx, fy;
+            public float cx, cy;
+            public int width, height;
+            public float aspect;
             public float fov;
         }
     }
