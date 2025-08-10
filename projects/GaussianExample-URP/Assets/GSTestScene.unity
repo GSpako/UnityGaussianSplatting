@@ -535,7 +535,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1930089734
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -564,9 +564,27 @@ MonoBehaviour:
   quadReductionModes: 0100
   alphaThresholds:
   - 0
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
   rMinValues:
   - 0
-  writeDiffImages: 1
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  writeDiffImages: 0
   diffScale: 5
   diffThresholdAfterScale: 15
   runOnStart: 1
@@ -604,7 +622,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &2045394581
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -623,15 +641,16 @@ MonoBehaviour:
   - {fileID: 11400000, guid: fc9d30d01eae889469c3e1b64b4c9cf7, type: 2}
   - {fileID: 11400000, guid: b559f23d69386b241a2a05a0a7b114d5, type: 2}
   rend: {fileID: 1609192434}
+  filePrefix: NxNTotalTiles
   resultsFileExtension: .csv
   delayBeforeRecord: 1
   delayAfterAssetSwap: 6
   startAlfa: 0
-  endAlfa: 0.5
-  incrementAlfa: 0.25
+  endAlfa: 0.4
+  incrementAlfa: 0.1
   startRadious: 0
-  endRadious: 0.5
-  incrementRadious: 0.25
+  endRadious: 0.4
+  incrementRadious: 0.1
   startTileBatchSize: 32
   endTileBatchSize: 256
   incrementTileBatchSize: 2
@@ -662,7 +681,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 231550835}
   - {fileID: 19473485}
-  - {fileID: 2045394582}
   - {fileID: 1930089735}
+  - {fileID: 2045394582}
   - {fileID: 1609192435}
   - {fileID: 1833520217}

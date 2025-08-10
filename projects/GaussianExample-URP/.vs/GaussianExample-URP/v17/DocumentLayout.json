@@ -7,26 +7,23 @@
       "RelativeMoniker": "D:0:0:{4B674206-4949-0913-37E4-50101BF31C82}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\experimentmanagerimagequality.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{90C7452B-3332-8E8F-FB7B-E5C2C604402D}|GaussianSplatting.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\runtime\\gaussiansplatrenderer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{4B674206-4949-0913-37E4-50101BF31C82}|Assembly-CSharp.csproj|D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\assets\\scripts\\experimentmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4B674206-4949-0913-37E4-50101BF31C82}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\experimentmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{3B00169A-B3AC-8FD5-66F4-B9FDFF42AC54}|GaussianSplattingEditor.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\editor\\gaussiansplatassetcreator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{3B00169A-B3AC-8FD5-66F4-B9FDFF42AC54}|GaussianSplattingEditor.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\editor\\gaussiansplatvalidator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{90C7452B-3332-8E8F-FB7B-E5C2C604402D}|GaussianSplatting.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\runtime\\gaussiansplatrenderer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{3B00169A-B3AC-8FD5-66F4-B9FDFF42AC54}|GaussianSplattingEditor.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\editor\\gaussiansplatrenderereditor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{90C7452B-3332-8E8F-FB7B-E5C2C604402D}|GaussianSplatting.csproj|d:\\universidad\\tfm\\unitygaussiansplatting\\package\\runtime\\gaussiansplatasset.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\GaussianSplatting.hlsl||{8B382828-6202-11D1-8870-0000F87579D2}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute||{8B382828-6202-11D1-8870-0000F87579D2}"
     }
   ],
   "DocumentGroupContainers": [
@@ -36,7 +33,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 216,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
@@ -44,27 +41,15 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "GaussianSplatAsset.cs",
-              "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatAsset.cs",
-              "RelativeDocumentMoniker": "..\\..\\package\\Runtime\\GaussianSplatAsset.cs",
-              "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatAsset.cs",
-              "RelativeToolTip": "..\\..\\package\\Runtime\\GaussianSplatAsset.cs",
-              "ViewState": "AgIAAOUAAAAAAAAAAAA5wPYAAAAMAAAAAAAAAA==",
+              "DocumentIndex": 2,
+              "Title": "GaussianSplatValidator.cs",
+              "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatValidator.cs",
+              "RelativeDocumentMoniker": "..\\..\\package\\Editor\\GaussianSplatValidator.cs",
+              "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatValidator.cs",
+              "RelativeToolTip": "..\\..\\package\\Editor\\GaussianSplatValidator.cs",
+              "ViewState": "AgIAAEsAAAAAAAAAAAAxwF4AAAA7AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-08-08T15:30:53.775Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "GaussianSplatAssetCreator.cs",
-              "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatAssetCreator.cs",
-              "RelativeDocumentMoniker": "..\\..\\package\\Editor\\GaussianSplatAssetCreator.cs",
-              "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatAssetCreator.cs",
-              "RelativeToolTip": "..\\..\\package\\Editor\\GaussianSplatAssetCreator.cs",
-              "ViewState": "AgIAAE8EAAAAAAAAAAA0wHQEAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-08-08T15:31:11.675Z"
+              "WhenOpened": "2025-08-08T20:34:28.148Z"
             },
             {
               "$type": "Document",
@@ -74,38 +59,38 @@
               "RelativeDocumentMoniker": "Assets\\Scripts\\ExperimentManagerImageQuality.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\Assets\\Scripts\\ExperimentManagerImageQuality.cs",
               "RelativeToolTip": "Assets\\Scripts\\ExperimentManagerImageQuality.cs",
-              "ViewState": "AgIAAGEBAAAAAAAAAAA1wJsBAAA+AAAAAAAAAA==",
+              "ViewState": "AgIAAAsCAAAAAAAAAAA8wB8AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-07-30T15:23:14.115Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 1,
               "Title": "ExperimentManager.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\Assets\\Scripts\\ExperimentManager.cs",
               "RelativeDocumentMoniker": "Assets\\Scripts\\ExperimentManager.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\projects\\GaussianExample-URP\\Assets\\Scripts\\ExperimentManager.cs",
               "RelativeToolTip": "Assets\\Scripts\\ExperimentManager.cs",
-              "ViewState": "AgIAAOAAAAAAAAAAAAAmwOsAAAAMAAAAAAAAAA==",
+              "ViewState": "AgIAAFoAAAAAAAAAAAAEwF4AAAARAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-08-04T10:08:18.221Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 3,
               "Title": "GaussianSplatRenderer.cs",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatRenderer.cs",
               "RelativeDocumentMoniker": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Runtime\\GaussianSplatRenderer.cs",
               "RelativeToolTip": "..\\..\\package\\Runtime\\GaussianSplatRenderer.cs",
-              "ViewState": "AgIAALkEAAAAAAAAAAAYwM0EAAAqAAAAAAAAAA==",
+              "ViewState": "AgIAAF4FAAAAAAAAAAAzwHEFAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-07-27T10:00:56.192Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 5,
               "Title": "SplatUtilities.compute",
               "DocumentMoniker": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Shaders\\SplatUtilities.compute",
               "RelativeDocumentMoniker": "..\\..\\package\\Shaders\\SplatUtilities.compute",
@@ -113,8 +98,7 @@
               "RelativeToolTip": "..\\..\\package\\Shaders\\SplatUtilities.compute",
               "ViewState": "AgIAADsCAAAAAAAAAIA2wE4CAAANAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
-              "WhenOpened": "2025-06-06T10:50:50.894Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-06T10:50:50.894Z"
             },
             {
               "$type": "Document",
@@ -126,8 +110,7 @@
               "RelativeToolTip": "..\\..\\package\\Shaders\\GaussianSplatting.hlsl",
               "ViewState": "AgIAAEwAAAAAAAAAAIA2wGcAAAAtAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002777|",
-              "WhenOpened": "2025-06-09T15:35:15.038Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-06-09T15:35:15.038Z"
             },
             {
               "$type": "Document",
@@ -137,7 +120,7 @@
               "RelativeDocumentMoniker": "..\\..\\package\\Editor\\GaussianSplatRendererEditor.cs",
               "ToolTip": "D:\\Universidad\\TFM\\UnityGaussianSplatting\\package\\Editor\\GaussianSplatRendererEditor.cs",
               "RelativeToolTip": "..\\..\\package\\Editor\\GaussianSplatRendererEditor.cs",
-              "ViewState": "AgIAADMBAAAAAAAAAAAIwEUBAAAfAAAAAAAAAA==",
+              "ViewState": "AgIAAOcAAAAAAAAAAAAEwPoAAAAXAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-07-05T11:30:08.423Z"
             }
