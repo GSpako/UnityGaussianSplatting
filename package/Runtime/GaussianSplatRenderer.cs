@@ -12,6 +12,7 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.UIElements;
 using UnityEngine.XR;
 using static GaussianSplatting.Runtime.GaussianSplatRenderer;
@@ -1196,32 +1197,94 @@ namespace GaussianSplatting.Runtime
 
             previousLine = currentLine;
         }
-
-        public void ActivateCamera(int index, int fov = 0)
+        public void ActivateCamera(int index, int renderWidth = -1, int renderHeight = -1)
         {
-            Camera mainCam = Camera.main;
-            if (!mainCam)
-                return;
-            if (!m_Asset || m_Asset.cameras == null)
-                return;
+            var cam = Camera.main;
+            if (!cam || m_Asset?.cameras == null) return;
 
-            var selfTr = transform;
-            var camTr = mainCam.transform;
-            var prevParent = camTr.parent;
-            var cam = m_Asset.cameras[index];
-           
-            camTr.parent = selfTr;
-            camTr.localPosition = cam.pos;
-            camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
-            camTr.parent = prevParent;
-            camTr.localScale = Vector3.one;
-            if (fov != 0) 
-                mainCam.fieldOfView = fov;
+            var d = m_Asset.cameras[index];
 
-#if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(camTr);
-#endif
+            // --- Pose ---
+            var tr = cam.transform;
+            var prevParent = tr.parent;
+            tr.parent = transform;
+            tr.localPosition = d.pos;
+            tr.localRotation = Quaternion.LookRotation(d.axisZ, d.axisY);
+            tr.parent = prevParent;
+            tr.localScale = Vector3.one;
+
+            // --- Use the actual render size (prefer target RT; allow explicit override) ---
+            int w = renderWidth > 0 ? renderWidth : (cam.targetTexture ? cam.targetTexture.width : cam.pixelWidth);
+            int h = renderHeight > 0 ? renderHeight : (cam.targetTexture ? cam.targetTexture.height : cam.pixelHeight);
+            // If JSON intrinsics are for a different training res, scale them
+            int srcW = d.width > 0 ? d.width : w;
+            int srcH = d.height > 0 ? d.height : h;
+            float sx = (float)w / srcW;
+            float sy = (float)h / srcH;
+
+            float fx = d.fx * sx;
+            float fy = (d.fy > 0 ? d.fy * sy : fx);
+            float cx = d.cx * sx;
+            float cy = d.cy * sy;
+
+            bool hasRT = cam.targetTexture != null;
+            int rtW = hasRT ? cam.targetTexture.width : 0;
+            int rtH = hasRT ? cam.targetTexture.height : 0;
+            bool intoRT = hasRT || cam.forceIntoRenderTexture;
+
+            //Debug.Log($"[ActivateCamera] asset {(m_Asset ? m_Asset.name : "<null>")} idx {index} intoRT {intoRT}");
+            //Debug.Log($"[ActivateCamera] renderW {renderWidth} renderH {renderHeight} -> w {w} h {h} pixel {cam.pixelWidth}x{cam.pixelHeight} rt {rtW}x{rtH}");
+            //Debug.Log($"[ActivateCamera] srcW {srcW} srcH {srcH} sx {sx} sy {sy} fx {fx} fy {fy} cx {cx} cy {cy}");
+            //Debug.Log($"[ActivateCamera] pose pos {d.pos} axisZ {d.axisZ} axisY {d.axisY}");
+
+            // --- Build exact projection from intrinsics ---
+            var proj = ProjectionFromIntrinsics(fx, fy, cx, cy, w, h, cam.nearClipPlane, cam.farClipPlane);
+            var gpuProj = GL.GetGPUProjectionMatrix(proj, /*renderIntoTexture*/ false);
+
+            //Debug.Log("[ActivateCamera] proj (camera space):\n" + proj);
+            //Debug.Log("[ActivateCamera] gpuProj:\n" + gpuProj);
+
+            cam.usePhysicalProperties = false;         // don’t let Unity rebuild from FOV
+            cam.projectionMatrix = gpuProj;
+            cam.nonJitteredProjectionMatrix = gpuProj; // no TAA jitter
+            cam.cullingMatrix = gpuProj * cam.worldToCameraMatrix;
+            cam.aspect = (float)w / h;                 // harmless, but don’t touch FOV
+
+            // Make the frame deterministic (URP)
+            var u = cam.GetComponent<UniversalAdditionalCameraData>();
+            if (u)
+            {
+                u.renderPostProcessing = false;
+                u.antialiasing = AntialiasingMode.None;
+                u.dithering = false;
+            }
+            cam.allowDynamicResolution = false;
+            QualitySettings.antiAliasing = 0;
         }
+
+
+        static Matrix4x4 ProjectionFromIntrinsics(
+        float fx, float fy, float cx, float cy,
+        int w, int h, float near, float far)
+        {
+            // Intrinsics are OpenCV-style (origin at top-left, y-down)
+            float l = -near * (cx) / fx;
+            float r = near * (w - cx) / fx;
+            float t = near * (cy) / fy;
+            float b = -near * (h - cy) / fy;
+
+            Matrix4x4 m = new Matrix4x4();
+            m[0, 0] = 2f * near / (r - l);
+            m[0, 2] = (r + l) / (r - l);
+            m[1, 1] = 2f * near / (t - b);
+            m[1, 2] = (t + b) / (t - b);
+            m[2, 2] = -(far + near) / (far - near);
+            m[2, 3] = -(2f * far * near) / (far - near);
+            m[3, 2] = -1f;
+            m[3, 3] = 0f;
+            return m;
+        }
+
 
         void ClearGraphicsBuffer(GraphicsBuffer buf)
         {
