@@ -236,11 +236,16 @@ namespace GaussianSplatting.Runtime
             public uint shR, shG, shB;
         }
 
+
         [Serializable]
         public struct CameraInfo
         {
             public Vector3 pos;
             public Vector3 axisX, axisY, axisZ;
+            public float fx, fy;
+            public float cx, cy;
+            public int width, height;
+            public float aspect;
             public float fov;
         }
     }
