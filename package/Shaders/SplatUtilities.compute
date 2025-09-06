@@ -1167,98 +1167,107 @@ void CSRenderAllTileSplatsGroupShared(
 
 }
 
-
 [numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]
 void CSRenderAllTileSplatsWave(
     uint3 tid : SV_GroupThreadID,
     uint3 groupId : SV_GroupID)
 {
-    uint tileX = groupId.x;
-    uint tileY = groupId.y;
-    
+    uint tileX = groupId.x, tileY = groupId.y;
     uint tileIndex = tileY * _TileCountX + tileX;
-    if (tileIndex >= _NumTiles)  
+    if (tileIndex >= _NumTiles)
         return;
-    
-    int x0 = tileX * _TileSize.x;
-    int y0 = tileY * _TileSize.y;
-    
-    //// compute pixel within full screen
+
+    uint x0 = tileX * _TileSize.x;
+    uint y0 = tileY * _TileSize.y;
+
     uint px = x0 + tid.x;
     uint py = y0 + tid.y;
 
-    //// exact same “border‐check” as in CSRenderTileSplats:
-    int x1 = min(x0 + _TileSize.x, _VecScreenParams.x);
-    int y1 = min(y0 + _TileSize.y, _VecScreenParams.y);
+    // Bordes del tile recortados a pantalla
+    uint x1 = min(x0 + _TileSize.x, (uint) _VecScreenParams.x);
+    uint y1 = min(y0 + _TileSize.y, (uint) _VecScreenParams.y);
     bool pixelOutsideTile = (px < x0 || px >= x1 || py < y0 || py >= y1);
+    if (pixelOutsideTile)
+        return; // early-out barato
 
-    // Precompute pixel center
-    float2 pixelCenter = float2(px, py);
-
-    // Compute prefix‑sum of splat counts to find baseOffset
+    // Prefix-sum a contadores por tile
     uint baseOffset = (tileIndex == 0) ? 0u : _SplatTileCounter[tileIndex - 1];
     uint counts = _SplatTileCounter[tileIndex] - baseOffset;
 
-    // Accumulators
-    float3 C = float3(0, 0, 0);
-    float T = 1.0f;
+    float3 C = 0.0.xxx;
+    float T = 1.0;
+    float2 pixelCenter = float2(px, py);
 
-    // Wave intrinsics helpers
-    uint lane = WaveGetLaneIndex();
-    bool isFirst = WaveIsFirstLane();
+    // Procesado por tandas
+    uint remaining = counts;
+    uint batchBase = baseOffset;
 
-    // Main splat loop
-    for (uint i = 0; i < counts; ++i)
+    const uint waveSize = WaveGetLaneCount();
+    const uint lane = WaveGetLaneIndex();
+
+    while (remaining > 0)
     {
-        // Fetch the key for this splat
-        uint splatKey = _SplatsKeys[baseOffset + i];
+        uint batchSize = min(remaining, (uint) WaveGetLaneCount()); // p.ej. múltiplo de waveSize
 
-        // Only lane 0 in each wave reads from global memory
-        SplatTileData leaderData;
-        if (isFirst)
+        // Subtandas de tamaño waveSize
+        for (uint sub = 0; sub < batchSize; sub += waveSize)
         {
-            leaderData = _SplatTileDataReadOnly[splatKey];
-        }
+            uint liveCount = min(waveSize, batchSize - sub);
 
-        // Broadcast all fields from lane 0 to the wave
-        float2 pos;
-        pos = WaveReadLaneFirst(leaderData.pos);
+            // Cada lane carga, como mucho, un splat
+            SplatTileData laneSplat;
+            if (lane < liveCount)
+            {
+                uint idx = batchBase + sub + lane; // ¡ojo! dentro de la tanda actual
+                uint splatIdx = _SplatsKeys[idx];
+                laneSplat = _SplatTileDataReadOnly[splatIdx];
+            }
 
-        float4 conic;
-        conic = WaveReadLaneFirst(leaderData.conic);
+            // Difunde y sombrea solo los lanes vivos
+            for (uint j = 0; j < liveCount; ++j)
+            {
+                //SplatTileData splat = WaveReadLaneAt(laneSplat, j);
+                
+                float2 pos;
+                pos = WaveReadLaneAt(laneSplat.pos, j);
 
-        uint2 colorBits;
-        colorBits = WaveReadLaneFirst(leaderData.color);
+                float4 conic;
+                conic = WaveReadLaneAt(laneSplat.conic, j);
 
-        // Unpack FP16 color
-        float3 rgb;
-        rgb.x = f16tof32(colorBits.x >> 16);
-        rgb.y = f16tof32(colorBits.x & 0xFFFF);
-        rgb.z = f16tof32(colorBits.y >> 16);
+                uint2 colorBits;
+                colorBits = WaveReadLaneAt(laneSplat.color, j);
 
-        // Compute Gaussian weight
-        float2 d = pos - pixelCenter;
-        float power = conic.w
+                // Unpack FP16 color
+                float3 rgb;
+                rgb.x = f16tof32(colorBits.x >> 16);
+                rgb.y = f16tof32(colorBits.x & 0xFFFF);
+                rgb.z = f16tof32(colorBits.y >> 16);
+
+                // Compute Gaussian weight
+                float2 d = pos - pixelCenter;
+                float power = conic.w
                      + conic.x * d.x * d.x
                      + conic.y * d.x * d.y
                      + conic.z * d.y * d.y;
-        float alpha = exp2(power);
+                half alpha = exp2(power);
 
-        // Front‑to‑back composite
-        C += rgb * (alpha * T);
-        T -= alpha * T;
+                // Front‑to‑back composite
+                C += rgb * (alpha * T);
+                T -= alpha * T;
+            }
+        }
 
-        // Early‑out if nearly opaque
-        if (T < 1e-3f && !isFirst)
+        if (WaveActiveAllTrue(T < 1e-3))
             break;
+
+        remaining -= batchSize;
+        batchBase += batchSize;
     }
 
-    if (pixelOutsideTile)
-        return;
-    
-    // Flip Y and write final color (no background here)
-    uint flippedY = uint(_VecScreenParams.y) - 1 - py;
-    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1.0f);
+    // Escritura final (pantalla con Y invertida)
+    uint flippedY = (uint) _VecScreenParams.y - 1u - py;
+    _GaussianSplatRT[uint2(px, flippedY)] = float4(C, 1.0);
+
 }
 
 [numthreads(TILE_GROUP_SIZE_X, TILE_GROUP_SIZE_Y, 1)]

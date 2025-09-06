@@ -341,7 +341,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Asset: {fileID: 11400000, guid: 69650b33afbe422428c350ebafda8060, type: 2}
+  m_Asset: {fileID: 11400000, guid: b55c75da53758d0459952d0b1d367e3d, type: 2}
   m_RenderOrder: 0
   m_SplatScale: 1
   m_OpacityScale: 1
@@ -356,7 +356,7 @@ MonoBehaviour:
   AlfaMin: 0.1
   m_ReducedQuadSize: 0
   batchedTileSystem: 0
-  m_TileRenderMode: 1
+  m_TileRenderMode: 2
   m_RenderMode: 0
   m_PointDisplaySize: 1
   m_Cutouts: []
@@ -550,40 +550,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   gaussians: {fileID: 1609192434}
   assetDefs:
-  - asset: {fileID: 11400000, guid: b55c75da53758d0459952d0b1d367e3d, type: 2}
-    dataset: bonsai
   - asset: {fileID: 11400000, guid: 69650b33afbe422428c350ebafda8060, type: 2}
     dataset: bonsai
-  - asset: {fileID: 11400000, guid: fc9d30d01eae889469c3e1b64b4c9cf7, type: 2}
-    dataset: truck
-  - asset: {fileID: 11400000, guid: b559f23d69386b241a2a05a0a7b114d5, type: 2}
-    dataset: truck
   refsRoot: D:\Universidad\TFM\Quality
   csvOutputDir: D:\Universidad\TFM\Quality\QualityAnalisis\QualityResults\Res
   refPrefix: D3D12
   quadReductionModes: 0100
   alphaThresholds:
   - 0
-  - 0.1
-  - 0.2
-  - 0.3
-  - 0.4
-  - 0.5
-  - 0.6
-  - 0.7
-  - 0.8
-  - 0.9
   rMinValues:
   - 0
-  - 0.1
-  - 0.2
-  - 0.3
-  - 0.4
-  - 0.5
-  - 0.6
-  - 0.7
-  - 0.8
-  - 0.9
   writeDiffImages: 0
   diffScale: 5
   diffThresholdAfterScale: 15
@@ -622,7 +598,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2045394581
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -636,12 +612,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Assets:
-  - {fileID: 11400000, guid: b55c75da53758d0459952d0b1d367e3d, type: 2}
-  - {fileID: 11400000, guid: 69650b33afbe422428c350ebafda8060, type: 2}
-  - {fileID: 11400000, guid: fc9d30d01eae889469c3e1b64b4c9cf7, type: 2}
   - {fileID: 11400000, guid: b559f23d69386b241a2a05a0a7b114d5, type: 2}
   rend: {fileID: 1609192434}
-  filePrefix: 32x32Pixels
+  filePrefix: NxNTotalTiles
   resultsFileExtension: .csv
   delayBeforeRecord: 1
   delayAfterAssetSwap: 6
